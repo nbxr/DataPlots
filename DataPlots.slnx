@@ -1,0 +1,14 @@
+<Solution>
+  <Configurations>
+    <Platform Name="x64" />
+  </Configurations>
+  <Project Path="DataPlots.Demo.Wpf/DataPlots.Demo.Wpf.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="DataPlots.Wpf/DataPlots.Wpf.csproj">
+    <Platform Project="x64" />
+  </Project>
+  <Project Path="DataPlots/DataPlots.csproj">
+    <Platform Project="x64" />
+  </Project>
+</Solution>

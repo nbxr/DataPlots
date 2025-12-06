@@ -1,0 +1,12 @@
+global using DataPlots;
+global using DataPlots.Core;
+global using DataPlots.Events;
+global using DataPlots.Series;
+global using System;
+global using System.Collections.Generic;
+global using System.Runtime.CompilerServices;
+global using System.Windows;
+global using System.Windows.Controls;
+global using System.Windows.Input;
+global using System.Windows.Media;
+global using System.Windows.Media.Imaging;

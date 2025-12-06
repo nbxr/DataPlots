@@ -1,0 +1,119 @@
+# Built by the best
+# DataPlots — the greatest plotting library ever made
+# .NET / Visual Studio
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+[Aa]rchive/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.cache
+*.tmp
+*.log
+
+# Build results
+[Dd]ebug/
+[Rr]elease/
+[Bb]uild/
+[Dd]ist/
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.obj
+*.o
+*.so
+*.a
+*.nupkg
+*.snupkg
+
+# NuGet
+packages/
+*.nuget.props
+*.nuget.targets
+.nuget/
+NuGet.Config
+
+# Visual Studio / Rider / VS Code
+.vscode/
+.idea/
+*.vs/
+*.vscode/
+*.vspscc
+*.vssscc
+*.suo
+*.user
+*.userprefs
+*.vsidx
+*.dbmdl
+*.jfm
+*.dotCover
+*.dotSettings.user
+*.ReSharper.user
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# Test results
+[Tt]est[Rr]esult*/
+[Tt]est[Rr]esults/
+*.trx
+*.coverage
+*.coveragexml
+coverage/
+
+# Rider
+.idea/
+*.iml
+*.iws
+
+# VS Code
+.vscode/
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# macOS
+.DS_Store
+*.swp
+*~
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+
+# MSBuild Binary and Structured Log
+*.binlog
+
+# Paket
+.paket/
+paket-files/
+
+# Fake
+.fake/
+
+# Cake
+tools/
+build.artifacts/
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+
+# End of file

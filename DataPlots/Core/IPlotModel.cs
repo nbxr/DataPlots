@@ -1,0 +1,21 @@
+﻿namespace DataPlots.Core
+{
+    public interface IPlotModel
+    {
+        public static readonly IPlotModel Empty = new EmptyPlotModel();
+        public IList<ISeries> Series { get; }
+        public IList<Axis> Axes { get; }
+        public RectD CalculateDataRect();
+        private sealed class EmptyPlotModel : IPlotModel
+        {
+            public IList<ISeries> Series { get; } = Array.Empty<ISeries>();
+
+            public IList<Axis> Axes { get; } = Array.Empty<Axis>();
+
+            public RectD CalculateDataRect()
+            {
+                return RectD.Empty;
+            }
+        }
+    }
+}
