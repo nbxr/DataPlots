@@ -1,4 +1,5 @@
 ﻿using DataPlots.Wpf.Extensions;
+using static DataPlots.Wpf.Extensions.CanvasUtilities;
 using System.Windows.Shapes;
 
 namespace DataPlots.Wpf.Plots
@@ -31,14 +32,7 @@ namespace DataPlots.Wpf.Plots
                     view.InvalidatePlot();
                 }));
 
-        private readonly ToolTip _toolTip = new ToolTip()
-        {
-            Placement = System.Windows.Controls.Primitives.PlacementMode.Mouse,
-            HasDropShadow = true,
-            Background = Brushes.Black,
-            Foreground = Brushes.White,
-            Padding = new Thickness(6.0d)
-        };
+        private readonly ToolTip _toolTip;
 
         public IPlotModel Model
         {
@@ -63,6 +57,18 @@ namespace DataPlots.Wpf.Plots
             _bitmap = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
             Background = Brushes.WhiteSmoke;
             SnapsToDevicePixels = true;
+
+            _toolTip = new ToolTip()
+            {
+                Placement = System.Windows.Controls.Primitives.PlacementMode.Mouse,
+                HasDropShadow = true,
+                Background = Brushes.Black,
+                Foreground = Brushes.White,
+                Padding = new Thickness(6.0d)
+            };
+
+            ToolTipService.SetInitialShowDelay(this, 0);
+            ToolTip = _toolTip;
 
             _boxRect = new Rectangle()
             {
@@ -187,7 +193,7 @@ namespace DataPlots.Wpf.Plots
             {
                 var sp = _transform.DataToScreen(new PointD(xTicks[i], dataRect.Y));
                 _bitmap.DrawLine(sp.X, renderRect.Bottom, sp.X, renderRect.Bottom - 6, axisColor);
-                AddLabel(xLabels[i], sp.X, renderRect.Bottom + 8, Colors.Black);
+                AddLabel(this, xLabels[i], sp.X, renderRect.Bottom + 8, Colors.Black, centerX: true, centerY: true);
             }
 
             // Y axis
@@ -196,39 +202,21 @@ namespace DataPlots.Wpf.Plots
             {
                 var sp = _transform.DataToScreen(new PointD(dataRect.X, yTicks[i]));
                 _bitmap.DrawLine(renderRect.Left, sp.Y, renderRect.Left + 6, sp.Y, axisColor);
-                AddLabel(yLabels[i], renderRect.Left - 8, sp.Y, Colors.Black);
+                AddLabel(this, yLabels[i], renderRect.Left - 16.0d, sp.Y, Colors.Black, centerX: false, centerY: true);
             }
 
             // Titles
             var xAxis = Model.Axes.First(a => a.Position == AxisPosition.Bottom);
-            AddLabel(xAxis.Title!, renderRect.Left + renderRect.Width / 2, renderRect.Bottom + 40, Colors.Black, 14);
+            AddLabel(this, xAxis.Title!, renderRect.Left + renderRect.Width / 2, renderRect.Bottom + 40, Colors.Black, 14);
 
             var yAxis = Model.Axes.First(a => a.Position == AxisPosition.Left);
-            AddLabel(yAxis.Title!, 30.0d, renderRect.Top + renderRect.Height / 2.0d, Colors.Black, 14.0d, -90.0d);
+            AddLabel(this, 
+                yAxis.Title!, 
+                renderRect.Left + 30.0d, 
+                renderRect.Top + renderRect.Height / 2.0d, Colors.Black, 14.0d, -90.0d, 
+                centerX: false, centerY: true);
         }
 
-        private void AddLabel(string text, double x, double y, Color color, double fontSize = 12, double angle = 0)
-        {
-            var tb = new TextBlock
-            {
-                Text = text,
-                Foreground = new SolidColorBrush(color),
-                FontSize = fontSize,
-                RenderTransformOrigin = new Point(0.5, 0.5),
-                IsHitTestVisible = false
-            };
-
-            if (Math.Abs(angle) > 0.01)
-                tb.RenderTransform = new RotateTransform(angle);
-
-            tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            tb.Arrange(new Rect(tb.DesiredSize));
-
-            Canvas.SetLeft(tb, x - tb.ActualWidth / 2);
-            Canvas.SetTop(tb, y - tb.ActualHeight / 2);
-
-            Children.Add(tb);
-        }
 
         private void ZoomToFit()
         {
