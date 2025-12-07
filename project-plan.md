@@ -31,14 +31,15 @@ Now we **evolve**.
 
 ## PHASE 2 — NEXT MILESTONES
 
-### 1. Configurable Zoom Behavior
+### 1. Configurable Zoom Behavior [x]
 **Goal:** Allow user to control which axes respond to zoom
 - Add `ZoomMode` enum to `PlotView`:
   ```csharp
   public enum ZoomMode { XY, XOnly, YOnly, None }
   public ZoomMode ZoomMode { get; set; } = ZoomMode.XY;
 
-### 2. IPlotModel Abstraction Complete. Move all demo logic out of MainWindow.xaml.cs into a proper model class
+### 2. IPlotModel Abstraction  
+- Move all demo logic out of MainWindow.xaml.cs into a proper model class
 First implementation: RandomDataPlot : IPlotModel
 
 ### 3. Polar Plot Support

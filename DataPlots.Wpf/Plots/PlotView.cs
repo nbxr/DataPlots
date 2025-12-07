@@ -223,7 +223,7 @@ namespace DataPlots.Wpf.Plots
                     foreach (var pt in scatter.Points)
                     {
                         var sp = _transform!.DataToScreen(new PointD(pt.X, pt.Y));
-                        _bitmap.FillEllipse(sp.X, sp.Y, scatter.PointSize, pt.Selected ? selected : color);
+                        _bitmap.FillCircle(sp.X, sp.Y, scatter.PointSize, pt.Selected ? selected : color, Colors.Black, 0.5d);
                     }
                 }
             }

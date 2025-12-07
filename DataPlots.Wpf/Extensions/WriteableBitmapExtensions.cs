@@ -114,70 +114,117 @@ internal static class WriteableBitmapExtensions
         bmp.Unlock();
     }
 
-    public static void FillEllipse(this WriteableBitmap bmp, double cx, double cy, double r, Color color)
+    public static void FillCircle(this WriteableBitmap bmp, double cx, double cy, double r, Color fillColor, Color? borderColor = null, double borderThickness = 0.0d)
     {
-        FillEllipse(bmp, cx, cy, r, r,color);
+        if (borderColor == null)
+            FillEllipse(bmp, cx, cy, r, r, fillColor);
+        else
+            FillEllipse(bmp, cx, cy, r, r, fillColor, borderColor, borderThickness);
     }
 
-    public static void FillEllipse(this WriteableBitmap bmp, double cx, double cy, double rx, double ry, Color color)
+    public static void FillEllipse(this WriteableBitmap bmp, double cx, double cy, double rx, double ry, Color fillColor, Color? borderColor = null, double borderThickness = 0.0d)
     {
-        // Perfect anti-aliased filled ellipse using distance-field + alpha blending
-        int x0 = (int)Math.Floor(cx - rx - 1.0d);
-        int x1 = (int)Math.Ceiling(cx + rx + 1.0d);
-        int y0 = (int)Math.Floor(cy - ry - 1.0d);
-        int y1 = (int)Math.Ceiling(cy + ry + 1.0d);
+        // Draw border first
+        if (borderColor.HasValue && borderThickness > 0.0d)
+        {
+            FillEllipse(bmp, cx, cy, rx, ry, borderColor.Value);
+            rx -= borderThickness;
+            ry -= borderThickness;
+        }
 
-        int w = bmp.PixelWidth;
-        int h = bmp.PixelHeight;
-        uint baseColor = (uint)ColorToInt(color);
-        byte aBase = (byte)(baseColor >> 24);
-        byte rBase = (byte)(baseColor >> 16);
-        byte gBase = (byte)(baseColor >> 8);
-        byte bBase = (byte)(baseColor);
+        // Draw fill second
+        if (fillColor.A > 0)
+        {
+            FillEllipse(bmp, cx, cy, rx, ry, fillColor);
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static void FillEllipse(this WriteableBitmap bmp, double cx, double cy, double rx, double ry, Color color)
+    {
+        if (rx <= 0 || ry <= 0 || color.A == 0) return;
+
+        // Bounding box with 2px margin for perfect AA
+        int x0 = Math.Max(0, (int)Math.Floor(cx - rx - 1.5));
+        int x1 = Math.Min(bmp.PixelWidth - 1, (int)Math.Ceiling(cx + rx + 1.5));
+        int y0 = Math.Max(0, (int)Math.Floor(cy - ry - 1.5));
+        int y1 = Math.Min(bmp.PixelHeight - 1, (int)Math.Ceiling(cy + ry + 1.5));
+
+        if (x0 >= x1 || y0 >= y1) return;
+
+        byte aSrc = color.A;
+        byte rSrc = color.R;
+        byte gSrc = color.G;
+        byte bSrc = color.B;
 
         bmp.Lock();
         unsafe
         {
-            int* buffer = (int*)bmp.BackBuffer;
-            int stride = bmp.BackBufferStride / 4;
+            byte* ptr = (byte*)bmp.BackBuffer;
+            int stride = bmp.BackBufferStride;
 
-            for (int y = Math.Max(y0, 0); y <= Math.Min(y1, h - 1); y++)
+            for (int y = y0; y <= y1; y++)
             {
-                for (int x = Math.Max(x0, 0); x <= Math.Min(x1, w - 1); x++)
+                byte* row = ptr + y * stride;
+                double dy = y + 0.5 - cy;
+                double dy2 = dy * dy / (ry * ry);
+
+                for (int x = x0; x <= x1; x++)
                 {
-                    double dx = (x - cx) / rx;
-                    double dy = (y - cy) / ry;
-                    double dist = dx * dx + dy * dy; // squared distance from center
+                    double dx = x + 0.5 - cx;
+                    double dist2 = dx * dx / (rx * rx) + dy2;
 
-                    if (dist >= 1.0d) continue;
+                    if (dist2 > 1.5 * 1.5) continue; // way outside
 
-                    double alpha = 1.0d;
-                    if (dist > 0.8d) // anti-alias the edge
+                    double coverage;
+                    if (dist2 <= 1.0)
+                        coverage = 1.0;
+                    else
                     {
-                        double edgeDist = Math.Sqrt(dist);
-                        double sqrt08 = Math.Sqrt(0.8d);
-                        alpha = 1.0d - Math.Min((edgeDist - sqrt08) / (1.0d - sqrt08), 1.0);
-
+                        // 1-pixel wide anti-aliased edge
+                        double t = Math.Sqrt(dist2) - 1.0;
+                        coverage = 1.0 - Math.Min(t * 8.0, 1.0); // 4.0 = fade over ~1px, 8.0 = ~0.5px
                     }
 
-                    uint pixel = (uint)buffer[y * stride + x];
-                    byte aBg = (byte)(pixel >> 24);
-                    byte rBg = (byte)(pixel >> 16);
-                    byte gBg = (byte)(pixel >> 8);
-                    byte bBg = (byte)(pixel);
+                    if (coverage <= 0.0) continue;
 
-                    byte a = (byte)(aBase * alpha + aBg * (1.0d - alpha));
-                    if (a == 0) continue; // fully transparent
+                    int offset = x * 4;
+                    byte* p = row + offset;
 
-                    byte r = (byte)((rBase * alpha * aBase + rBg * aBg * (1.0d - alpha)) / a);
-                    byte g = (byte)((gBase * alpha * aBase + gBg * aBg * (1.0d - alpha)) / a);
-                    byte b = (byte)((bBase * alpha * aBase + bBg * aBg * (1.0d - alpha)) / a);
+                    // --- Correct source-over blending (BGRA) ---
+                    if (aSrc == 255 && coverage >= 1.0)
+                    {
+                        // Opaque fast path
+                        p[0] = bSrc;
+                        p[1] = gSrc;
+                        p[2] = rSrc;
+                        p[3] = 255;
+                    }
+                    else
+                    {
+                        double alpha = aSrc * coverage / 255.0;
+                        double oneMinusAlpha = 1.0 - alpha;
 
-                    buffer[y * stride + x] = (a << 24) | (r << 16) | (g << 8) | b;
+                        byte bDst = p[0];
+                        byte gDst = p[1];
+                        byte rDst = p[2];
+                        byte aDst = p[3];
+
+                        byte rNew = (byte)(rSrc * alpha + rDst * oneMinusAlpha);
+                        byte gNew = (byte)(gSrc * alpha + gDst * oneMinusAlpha);
+                        byte bNew = (byte)(bSrc * alpha + bDst * oneMinusAlpha);
+                        byte aNew = (byte)(aSrc * coverage + aDst * (255 - aSrc * coverage) / 255.0);
+
+                        p[0] = bNew;
+                        p[1] = gNew;
+                        p[2] = rNew;
+                        p[3] = aNew;
+                    }
                 }
             }
         }
-        bmp.AddDirtyRect(new Int32Rect(0, 0, w, h));
+
+        bmp.AddDirtyRect(new Int32Rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1));
         bmp.Unlock();
     }
 
