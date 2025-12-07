@@ -1,6 +1,7 @@
 ﻿using DataPlots.Wpf.Extensions;
-using static DataPlots.Wpf.Extensions.CanvasUtilities;
+using DataPlots.Wpf.Utilities;
 using System.Windows.Shapes;
+using static DataPlots.Wpf.Utilities.CanvasUtilities;
 
 namespace DataPlots.Wpf.Plots
 {
@@ -14,6 +15,7 @@ namespace DataPlots.Wpf.Plots
         private int _hoveredIndex = -1;
         private RectD _currentView = RectD.Empty;
         private RectD _lastRenderRect = RectD.Empty;
+        private ThicknessD _renderRectPadding = new ThicknessD(60, 30, 30, 50);
         private Point _boxStart;
         private Rect _boxOverlay;
         private Point _lastMousePos;
@@ -127,37 +129,48 @@ namespace DataPlots.Wpf.Plots
             var dataRect = _currentView;
             if (dataRect.Width <= 0) dataRect.Width = 1;
             if (dataRect.Height <= 0) dataRect.Height = 1;
-
-            var padding = new ThicknessD(60, 30, 30, 50);
+            
             var renderRect = new RectD(
-                padding.Left, padding.Top,
-                _bitmap.PixelWidth - padding.Left - padding.Right,
-                _bitmap.PixelHeight - padding.Top - padding.Bottom);
+                _renderRectPadding.Left, _renderRectPadding.Top,
+                _bitmap.PixelWidth - _renderRectPadding.Left - _renderRectPadding.Right,
+                _bitmap.PixelHeight - _renderRectPadding.Top - _renderRectPadding.Bottom);
+
             _lastRenderRect = renderRect;
             _transform = new PlotTransform(dataRect, renderRect);
-
-            _bitmap.Clear(Colors.WhiteSmoke);
-            DrawPlotContent(renderRect, dataRect);
 
             // Clear old labels and add new ones
             var oldLabels = Children.OfType<TextBlock>().ToList();
             foreach (var tb in oldLabels) Children.Remove(tb);
 
+            _bitmap.Clear(Colors.WhiteSmoke);
+            DrawGridLines(renderRect, dataRect);
+            DrawPlotContent(renderRect, dataRect);
             DrawAxesAndLabels(renderRect, dataRect);
+        }
+
+        private void DrawGridLines(RectD renderRect, RectD dataRect)
+        {
+            var gridColor = Color.FromArgb(40, 0, 0, 0); // Light gray
+
+            // Vertical grid lines (X ticks)
+            var (xTicks, _) = TickGenerator.Generate(dataRect.X, dataRect.Right);
+            foreach (double tick in xTicks)
+            {
+                double x = _transform.DataToScreen(new PointD(tick, 0)).X;
+                _bitmap.DrawLine(x, renderRect.Top, x, renderRect.Bottom, gridColor);
+            }
+
+            // Horizontal grid lines (Y ticks)
+            var (yTicks, _) = TickGenerator.Generate(dataRect.Y, dataRect.Bottom);
+            foreach (double tick in yTicks)
+            {
+                double y = _transform.DataToScreen(new PointD(0, tick)).Y;
+                _bitmap.DrawLine(renderRect.Left, y, renderRect.Right, y, gridColor);
+            }
         }
 
         private void DrawPlotContent(RectD renderRect, RectD dataRect)
         {
-            // Grid
-            var gridColor = Color.FromArgb(40, 0, 0, 0);
-            for (int i = 0; i <= 10; i++)
-            {
-                double vx = renderRect.Left + i * renderRect.Width / 10;
-                double vy = renderRect.Top + i * renderRect.Height / 10;
-                _bitmap.DrawLine(vx, renderRect.Top, vx, renderRect.Bottom, gridColor);
-                _bitmap.DrawLine(renderRect.Left, vy, renderRect.Right, vy, gridColor);
-            }
-
             // Series
             foreach (var series in Model!.Series.Where(s => s.IsVisible))
             {
@@ -202,19 +215,34 @@ namespace DataPlots.Wpf.Plots
             {
                 var sp = _transform.DataToScreen(new PointD(dataRect.X, yTicks[i]));
                 _bitmap.DrawLine(renderRect.Left, sp.Y, renderRect.Left + 6, sp.Y, axisColor);
-                AddLabel(this, yLabels[i], renderRect.Left - 16.0d, sp.Y, Colors.Black, centerX: false, centerY: true);
+
+                // Measure label width
+                var labelWidth = yLabels[i].MeasureText(12.0d).Width;
+                // Dynamic offset: always fully visible, never clipped
+                double labelX = renderRect.Left - labelWidth - 12.0d; // 12px padding from axis
+                AddLabel(this, yLabels[i], labelX, sp.Y, Colors.Black, centerX: false, centerY: true);
             }
 
             // Titles
             var xAxis = Model.Axes.First(a => a.Position == AxisPosition.Bottom);
-            AddLabel(this, xAxis.Title!, renderRect.Left + renderRect.Width / 2, renderRect.Bottom + 40, Colors.Black, 14);
+            AddLabel(this,
+                xAxis.Title!,
+                renderRect.Left + renderRect.Width / 2,
+                renderRect.Bottom + _renderRectPadding.Bottom * 0.6d,
+                Colors.Black,
+                14);
 
             var yAxis = Model.Axes.First(a => a.Position == AxisPosition.Left);
-            AddLabel(this, 
-                yAxis.Title!, 
-                renderRect.Left + 30.0d, 
-                renderRect.Top + renderRect.Height / 2.0d, Colors.Black, 14.0d, -90.0d, 
-                centerX: false, centerY: true);
+            AddLabel(
+                this,
+                yAxis.Title!,
+                _renderRectPadding.Left * 0.4d,
+                renderRect.Top + renderRect.Height / 2.0d,
+                Colors.Black,
+                14.0d,
+                -90.0d,
+                centerX: true,
+                centerY: true);
         }
 
 

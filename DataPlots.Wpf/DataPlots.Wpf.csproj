@@ -13,4 +13,8 @@
     <ProjectReference Include="..\DataPlots\DataPlots.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="Utilities\" />
+  </ItemGroup>
+
 </Project>

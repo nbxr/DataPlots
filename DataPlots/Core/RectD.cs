@@ -21,7 +21,7 @@
 
         public readonly double Top
         {
-            get { return Y + Height; }
+            get { return Y; }
         }
 
         public readonly double Bottom

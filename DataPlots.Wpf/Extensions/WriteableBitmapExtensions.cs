@@ -33,34 +33,60 @@ internal static class WriteableBitmapExtensions
 
     public static void DrawLine(this WriteableBitmap bmp, double x0, double y0, double x1, double y1, Color color, double thickness = 1.0)
     {
+        int intColor = ColorToInt(color);
+
+        // If thickness > 1.5, fall back to WPF's built-in (still fast enough for lines)
         if (thickness > 1.5)
         {
-            // Thick lines — use WPF geometry (still fast enough)
-            var geometry = new LineGeometry(new Point(x0, y0), new Point(x1, y1));
-            var pen = new Pen(new SolidColorBrush(color), thickness) { LineJoin = PenLineJoin.Round };
+            bmp.Lock();
+            var pen = new Pen(new SolidColorBrush(color), thickness)
+            {
+                LineJoin = PenLineJoin.Round,
+                EndLineCap = PenLineCap.Round,
+                StartLineCap = PenLineCap.Round
+            };
 
             var dv = new DrawingVisual();
             using (var dc = dv.RenderOpen())
-                dc.DrawGeometry(null, pen, geometry);
+            {
+                dc.DrawLine(pen, new Point(x0, y0), new Point(x1, y1));
+            }
 
             var rtb = new RenderTargetBitmap(bmp.PixelWidth, bmp.PixelHeight, 96, 96, PixelFormats.Pbgra32);
             rtb.Render(dv);
-            rtb.CopyPixels(new Int32Rect(0, 0, bmp.PixelWidth, bmp.PixelHeight),
-                bmp.BackBuffer, bmp.BackBufferStride * bmp.PixelHeight, bmp.BackBufferStride);
+
+            // Only copy the dirty area around the line
+            int margin = (int)Math.Ceiling(thickness);
+            int left = (int)Math.Min(x0, x1) - margin;
+            int top = (int)Math.Min(y0, y1) - margin;
+            int width = (int)Math.Abs(x1 - x0) + 2 * margin;
+            int height = (int)Math.Abs(y1 - y0) + 2 * margin;
+
+            var rect = new Int32Rect(
+                Math.Max(0, left),
+                Math.Max(0, top),
+                Math.Min(width, bmp.PixelWidth - Math.Max(0, left)),
+                Math.Min(height, bmp.PixelHeight - Math.Max(0, top)));
+
+            if (rect.Width > 0 && rect.Height > 0)
+            {
+                rtb.CopyPixels(rect, bmp.BackBuffer + (rect.Y * bmp.BackBufferStride + rect.X * 4),
+                    rect.Height * bmp.BackBufferStride, bmp.BackBufferStride);
+                bmp.AddDirtyRect(rect);
+            }
+            bmp.Unlock();
             return;
         }
 
         // Thin lines — ultra-fast Bresenham
-        int intColor = ColorToInt(color);
+
         bmp.Lock();
-        int w;
-        int h;
+        int w = bmp.PixelWidth;
+        int h = bmp.PixelHeight;
         unsafe
         {
             int* buffer = (int*)bmp.BackBuffer;
             int stride = bmp.BackBufferStride / 4;
-            w = bmp.PixelWidth;
-            h = bmp.PixelHeight;
 
             int ix0 = (int)Math.Round(x0);
             int iy0 = (int)Math.Round(y0);
@@ -89,7 +115,9 @@ internal static class WriteableBitmapExtensions
     }
 
     public static void FillEllipse(this WriteableBitmap bmp, double cx, double cy, double r, Color color)
-        => FillEllipse(bmp, cx, cy, r, r, color);
+    {
+        FillEllipse(bmp, cx, cy, r, r, color);
+    }
 
     public static void FillEllipse(this WriteableBitmap bmp, double cx, double cy, double rx, double ry, Color color)
     {

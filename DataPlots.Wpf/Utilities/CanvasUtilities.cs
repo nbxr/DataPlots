@@ -1,4 +1,4 @@
-﻿namespace DataPlots.Wpf.Extensions
+﻿namespace DataPlots.Wpf.Utilities
 {
     public static class CanvasUtilities
     {
@@ -10,18 +10,21 @@
                 Text = text,
                 Foreground = new SolidColorBrush(color),
                 FontSize = fontSize,
-                RenderTransformOrigin = new Point(0.5, 0.5),
+                RenderTransformOrigin = new Point(0.5d, 0.5d),
                 IsHitTestVisible = false
             };
 
-            if (Math.Abs(angle) > 0.01)
+            if (Math.Abs(angle) > 0.01d)
                 tb.RenderTransform = new RotateTransform(angle);
 
-            tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-            tb.Arrange(new Rect(tb.DesiredSize));
+            if (centerX || centerY)
+            {
+                tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                tb.Arrange(new Rect(tb.DesiredSize));
+            }
 
-            double left = centerX ? x - tb.ActualWidth / 2 : x;
-            double top = centerY ? y - tb.ActualHeight / 2 : y;
+            double left = centerX ? x - tb.ActualWidth / 2.0d : x;
+            double top = centerY ? y - tb.ActualHeight / 2.0d : y;
 
             Canvas.SetLeft(tb, left);
             Canvas.SetTop(tb, top);
