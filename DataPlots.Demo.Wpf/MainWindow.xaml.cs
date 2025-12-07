@@ -46,10 +46,6 @@ namespace DataPlots.Demo.Wpf
             model.Series.Add(line);
             
             plotView.Model = model;
-            plotView.DataPointSelected += (s, e) =>
-            {   
-                MessageBox.Show($"Clicked: X={e.Point.X:0.00}, Y={e.Point.Y:0.00}\nTag={e.Point.Tag}");
-            };
         }
     }
 }

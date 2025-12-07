@@ -1,4 +1,6 @@
-﻿namespace DataPlots.Core
+﻿using System.Diagnostics.CodeAnalysis;
+
+namespace DataPlots.Core
 {
     public struct RectD
     {
@@ -37,6 +39,15 @@
             Height = height;
         }
 
+        public static RectD Normalized(PointD p1, PointD p2)
+        {
+            double x = Math.Min(p1.X, p2.X);
+            double y = Math.Min(p1.Y, p2.Y);
+            double width = Math.Abs(p1.X - p2.X);
+            double height = Math.Abs(p1.Y - p2.Y);
+            return new RectD(x, y, width, height);
+        }
+
         private static bool DEquals(double a, double b)
         {
             if (Math.Abs(a - b) < double.Epsilon)
@@ -53,6 +64,16 @@
         public static bool operator !=(RectD a, RectD b)
         {
             return !(a == b);
+        }
+
+        public override readonly bool Equals([NotNullWhen(true)] object? obj)
+        {
+            return obj is RectD other && this == other;
+        }
+
+        public override readonly int GetHashCode()
+        {
+            return HashCode.Combine(X, Y, Width, Height);
         }
     }
 }

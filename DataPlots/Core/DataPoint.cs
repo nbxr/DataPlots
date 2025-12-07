@@ -4,6 +4,7 @@
     {
         public double X { get; set; }
         public double Y { get; set; }
+        public bool Selected { get; set; } = false;
         public object? Tag { get; set; }
         public DataPoint(double x, double y, object? tag = null)
         {

@@ -4,13 +4,41 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:DataPlots.Demo.Wpf"
-        xmlns:dp="clr-namespace:DataPlots.Wpf.Plots;assembly=DataPlots.Wpf"
+        xmlns:dp="clr-namespace:DataPlots.Core;assembly=DataPlots"
+        xmlns:dpwpf="clr-namespace:DataPlots.Wpf.Plots;assembly=DataPlots.Wpf"
         mc:Ignorable="d"
         Title="DataPlots - Zero-Dependency Demo" 
         Height="450" 
         Width="800">
     <Grid>
-        <dp:PlotView x:Name="plotView" 
-                     Background="#FFF8F8F8"/>
+        <dpwpf:PlotView x:Name="plotView"
+                        ZoomMode="{Binding SelectedItem, ElementName=ZoomComboBox}"
+                        Background="#FFF8F8F8"/>
+        <!-- ComboBox for ZoomMode selection -->
+        <Border Background="White"
+                BorderBrush="#FFD0D0D0"
+                BorderThickness="1"
+                CornerRadius="4"
+                Padding="8"
+                HorizontalAlignment="Right"
+                VerticalAlignment="Top"
+                Margin="0,20,20,0">
+
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Zoom Mode:"
+                           VerticalAlignment="Center"
+                           FontWeight="SemiBold"
+                           Foreground="#FF333333"
+                           Margin="0,0,10,0"/>
+                <!-- Uncomment the block below if you don't want to add a converter -->
+                <ComboBox x:Name="ZoomComboBox"
+                          SelectedIndex="0">
+                    <dp:ZoomMode>XY</dp:ZoomMode>
+                    <dp:ZoomMode>XOnly</dp:ZoomMode>
+                    <dp:ZoomMode>YOnly</dp:ZoomMode>
+                    <dp:ZoomMode>None</dp:ZoomMode>
+                </ComboBox>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

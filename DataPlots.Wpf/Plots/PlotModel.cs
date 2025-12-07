@@ -9,6 +9,8 @@
             new Axis(){ Position = AxisPosition.Left , Title = "Y Axis"}
         };
 
+        public ZoomMode ZoomMode { get; } = ZoomMode.XY;
+
         public RectD CalculateDataRect()
         {
             double minX = double.MaxValue;

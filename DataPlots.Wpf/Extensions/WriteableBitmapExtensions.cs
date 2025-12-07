@@ -116,10 +116,72 @@ internal static class WriteableBitmapExtensions
 
     public static void FillEllipse(this WriteableBitmap bmp, double cx, double cy, double r, Color color)
     {
-        FillEllipse(bmp, cx, cy, r, r, color);
+        FillEllipse(bmp, cx, cy, r, r,color);
     }
 
     public static void FillEllipse(this WriteableBitmap bmp, double cx, double cy, double rx, double ry, Color color)
+    {
+        // Perfect anti-aliased filled ellipse using distance-field + alpha blending
+        int x0 = (int)Math.Floor(cx - rx - 1.0d);
+        int x1 = (int)Math.Ceiling(cx + rx + 1.0d);
+        int y0 = (int)Math.Floor(cy - ry - 1.0d);
+        int y1 = (int)Math.Ceiling(cy + ry + 1.0d);
+
+        int w = bmp.PixelWidth;
+        int h = bmp.PixelHeight;
+        uint baseColor = (uint)ColorToInt(color);
+        byte aBase = (byte)(baseColor >> 24);
+        byte rBase = (byte)(baseColor >> 16);
+        byte gBase = (byte)(baseColor >> 8);
+        byte bBase = (byte)(baseColor);
+
+        bmp.Lock();
+        unsafe
+        {
+            int* buffer = (int*)bmp.BackBuffer;
+            int stride = bmp.BackBufferStride / 4;
+
+            for (int y = Math.Max(y0, 0); y <= Math.Min(y1, h - 1); y++)
+            {
+                for (int x = Math.Max(x0, 0); x <= Math.Min(x1, w - 1); x++)
+                {
+                    double dx = (x - cx) / rx;
+                    double dy = (y - cy) / ry;
+                    double dist = dx * dx + dy * dy; // squared distance from center
+
+                    if (dist >= 1.0d) continue;
+
+                    double alpha = 1.0d;
+                    if (dist > 0.8d) // anti-alias the edge
+                    {
+                        double edgeDist = Math.Sqrt(dist);
+                        double sqrt08 = Math.Sqrt(0.8d);
+                        alpha = 1.0d - Math.Min((edgeDist - sqrt08) / (1.0d - sqrt08), 1.0);
+
+                    }
+
+                    uint pixel = (uint)buffer[y * stride + x];
+                    byte aBg = (byte)(pixel >> 24);
+                    byte rBg = (byte)(pixel >> 16);
+                    byte gBg = (byte)(pixel >> 8);
+                    byte bBg = (byte)(pixel);
+
+                    byte a = (byte)(aBase * alpha + aBg * (1.0d - alpha));
+                    if (a == 0) continue; // fully transparent
+
+                    byte r = (byte)((rBase * alpha * aBase + rBg * aBg * (1.0d - alpha)) / a);
+                    byte g = (byte)((gBase * alpha * aBase + gBg * aBg * (1.0d - alpha)) / a);
+                    byte b = (byte)((bBase * alpha * aBase + bBg * aBg * (1.0d - alpha)) / a);
+
+                    buffer[y * stride + x] = (a << 24) | (r << 16) | (g << 8) | b;
+                }
+            }
+        }
+        bmp.AddDirtyRect(new Int32Rect(0, 0, w, h));
+        bmp.Unlock();
+    }
+
+    public static void FillEllipseInt(this WriteableBitmap bmp, double cx, double cy, double rx, double ry, Color color)
     {
         int intColor = ColorToInt(color);
         int x0 = (int)Math.Round(cx - rx);

@@ -1,5 +1,6 @@
 ﻿using DataPlots.Wpf.Extensions;
 using DataPlots.Wpf.Utilities;
+using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using static DataPlots.Wpf.Utilities.CanvasUtilities;
 
@@ -7,24 +8,28 @@ namespace DataPlots.Wpf.Plots
 {
     public class PlotView : Canvas
     {
+        #region Events
+        public event EventHandler<DataPointHoverEventArgs>? DataPointHoverChanged;
+        public event EventHandler<DataPointSelectedEventArgs>? DataPointSelected;
+        #endregion Events
+        #region Fields
         private readonly Rectangle _boxRect;
-        private WriteableBitmap _bitmap;
         private readonly Image _plotImage;
+        private readonly ToolTip _toolTip;
+        private WriteableBitmap _bitmap;
         private IPlotTransform _transform = IPlotTransform.Empty;
-        private ISeries? _hoveredSeries;
-        private int _hoveredIndex = -1;
         private RectD _currentView = RectD.Empty;
         private RectD _lastRenderRect = RectD.Empty;
-        private ThicknessD _renderRectPadding = new ThicknessD(60, 30, 30, 50);
+        private ThicknessD _plotPadding = new ThicknessD(60, 30, 30, 50);
+        private ISeries? _hoveredSeries;
+        private int _hoveredIndex = -1;
         private Point _boxStart;
         private Rect _boxOverlay;
         private Point _lastMousePos;
         private bool _isBoxZooming;
         private bool _isPanning;
-
-        public event EventHandler<DataPointHoverEventArgs>? DataPointHoverChanged;
-        public event EventHandler<DataPointSelectedEventArgs>? DataPointSelected;
-
+        #endregion Fields
+        #region Dependency Properties
         public static readonly DependencyProperty ModelProperty =
             DependencyProperty.Register(nameof(Model), typeof(PlotModel), typeof(PlotView),
                 new PropertyMetadata(null, (d, e) =>
@@ -34,7 +39,19 @@ namespace DataPlots.Wpf.Plots
                     view.InvalidatePlot();
                 }));
 
-        private readonly ToolTip _toolTip;
+        public static readonly DependencyProperty ZoomModeProperty =
+            DependencyProperty.Register(
+                nameof(ZoomMode),
+                typeof(ZoomMode),
+                typeof(PlotView),
+                new PropertyMetadata(ZoomMode.XY, OnZoomModeChanged));
+        #endregion Dependency Properties
+        #region Properties
+        public ZoomMode ZoomMode
+        {
+            get { return (ZoomMode)GetValue(ZoomModeProperty); }
+            set { SetValue(ZoomModeProperty, value); }
+        }
 
         public IPlotModel Model
         {
@@ -53,7 +70,8 @@ namespace DataPlots.Wpf.Plots
                 InvalidatePlot();
             }
         }
-
+        #endregion Properties
+        #region Constructor
         public PlotView()
         {
             _bitmap = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
@@ -103,12 +121,26 @@ namespace DataPlots.Wpf.Plots
             SizeChanged += (_, __) => InvalidatePlot();
             Loaded += (_, __) => InvalidatePlot();
         }
-
+        #endregion Constructor
+        #region Methods
+        private static void OnZoomModeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            PlotView plotView = (PlotView)d;
+            // Optional: Invalidate rendering and reset zoom if switching to None
+            if (plotView.ZoomMode == ZoomMode.None)
+            {
+                // Reset transform to full view
+                plotView.ZoomToFit();
+            }
+            plotView.InvalidateVisual(); // Trigger re-render if axes need updating
+        }
+        #endregion Methods
+        #region Private Methods
         private void InvalidatePlot()
         {
             if (ActualWidth < 10 || ActualHeight < 10) return;
 
-            if (_currentView == RectD.Empty && Model != null)
+            if (_currentView == RectD.Empty)
                 _currentView = Model.CalculateDataRect();
 
             int w = (int)ActualWidth;
@@ -129,11 +161,11 @@ namespace DataPlots.Wpf.Plots
             var dataRect = _currentView;
             if (dataRect.Width <= 0) dataRect.Width = 1;
             if (dataRect.Height <= 0) dataRect.Height = 1;
-            
+
             var renderRect = new RectD(
-                _renderRectPadding.Left, _renderRectPadding.Top,
-                _bitmap.PixelWidth - _renderRectPadding.Left - _renderRectPadding.Right,
-                _bitmap.PixelHeight - _renderRectPadding.Top - _renderRectPadding.Bottom);
+                _plotPadding.Left, _plotPadding.Top,
+                _bitmap.PixelWidth - _plotPadding.Left - _plotPadding.Right,
+                _bitmap.PixelHeight - _plotPadding.Top - _plotPadding.Bottom);
 
             _lastRenderRect = renderRect;
             _transform = new PlotTransform(dataRect, renderRect);
@@ -187,10 +219,11 @@ namespace DataPlots.Wpf.Plots
                 else if (series is ScatterSeries scatter)
                 {
                     var color = scatter.Fill.ToMediaColor();
+                    var selected = Colors.DodgerBlue;
                     foreach (var pt in scatter.Points)
                     {
                         var sp = _transform!.DataToScreen(new PointD(pt.X, pt.Y));
-                        _bitmap.FillEllipse(sp.X, sp.Y, scatter.PointSize, color);
+                        _bitmap.FillEllipse(sp.X, sp.Y, scatter.PointSize, pt.Selected ? selected : color);
                     }
                 }
             }
@@ -228,7 +261,7 @@ namespace DataPlots.Wpf.Plots
             AddLabel(this,
                 xAxis.Title!,
                 renderRect.Left + renderRect.Width / 2,
-                renderRect.Bottom + _renderRectPadding.Bottom * 0.6d,
+                renderRect.Bottom + _plotPadding.Bottom * 0.6d,
                 Colors.Black,
                 14);
 
@@ -236,7 +269,7 @@ namespace DataPlots.Wpf.Plots
             AddLabel(
                 this,
                 yAxis.Title!,
-                _renderRectPadding.Left * 0.4d,
+                _plotPadding.Left * 0.4d,
                 renderRect.Top + renderRect.Height / 2.0d,
                 Colors.Black,
                 14.0d,
@@ -277,15 +310,18 @@ namespace DataPlots.Wpf.Plots
 
         private void OnMouseWheel(object sender, MouseWheelEventArgs e)
         {
-            if (_transform == null) return;
+            if (ZoomMode == ZoomMode.None) return;
 
             double factor = e.Delta > 0 ? 0.9 : 1.1;
-            var mouseData = _transform.ScreenToData(new PointD(e.GetPosition(this).X, e.GetPosition(this).Y));
+            Point mousePoint = e.GetPosition(this);
+            PointD mouseData = _transform.ScreenToData(new PointD(mousePoint.X, mousePoint.Y));
 
-            double newW = _currentView.Width * factor;
-            double newH = _currentView.Height * factor;
-            double newX = mouseData.X - (mouseData.X - _currentView.X) * factor;
-            double newY = mouseData.Y - (mouseData.Y - _currentView.Y) * factor;
+            double factorX = ZoomsX() ? factor : 1.0d;
+            double factorY = ZoomsY() ? factor : 1.0d;
+            double newW = _currentView.Width * factorX;
+            double newH = _currentView.Height * factorY;
+            double newX = mouseData.X - (mouseData.X - _currentView.X) * factorX;
+            double newY = mouseData.Y - (mouseData.Y - _currentView.Y) * factorY;
 
             _currentView = new RectD(newX, newY, newW, newH);
             InvalidatePlot();
@@ -299,9 +335,11 @@ namespace DataPlots.Wpf.Plots
                 return;
             }
 
-            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift))
+            if (Keyboard.Modifiers.HasFlag(ModifierKeys.Shift) && Zooms())
             {
                 _isBoxZooming = true;
+                _boxOverlay.Width = 1.0d;
+                _boxOverlay.Height = 1.0d;
                 _boxStart = e.GetPosition(this);
                 _boxRect.Width = _boxRect.Height = 0;
                 Canvas.SetLeft(_boxRect, _boxStart.X);
@@ -315,10 +353,12 @@ namespace DataPlots.Wpf.Plots
                 if (_hoveredSeries != null && _hoveredIndex > -1)
                 {
                     DataPoint point = _hoveredSeries.Points[_hoveredIndex];
-                    DataPointSelected?.Invoke(this,
-                        new DataPointSelectedEventArgs(_hoveredSeries, _hoveredIndex, point, Core.MouseButton.Left));
+                    point.Selected = !point.Selected;
                     CaptureMouse();
                     e.Handled = true;
+                    InvalidatePlot();
+                    DataPointSelected?.Invoke(this,
+                        new DataPointSelectedEventArgs(_hoveredSeries, _hoveredIndex, point, Core.MouseButton.Left));
                 }
             }
             else
@@ -353,11 +393,17 @@ namespace DataPlots.Wpf.Plots
                 _boxRect.Visibility = Visibility.Visible;
             }
             // Panning
-            else if (_isPanning && _transform != null)
+            else if (_isPanning)
             {
                 Vector delta = _lastMousePos - pos;
-                double dx = delta.X * _currentView.Width / _lastRenderRect.Width;
-                double dy = -delta.Y * _currentView.Height / _lastRenderRect.Height;
+                double dx = 0.0d;
+                double dy = 0.0d;
+
+                if (ZoomsX())
+                    dx = delta.X * _currentView.Width / _lastRenderRect.Width;
+
+                if (ZoomsY())
+                    dy = -delta.Y * _currentView.Height / _lastRenderRect.Height;
 
                 _currentView = new RectD(
                     _currentView.X + dx,
@@ -398,9 +444,24 @@ namespace DataPlots.Wpf.Plots
             }
         }
 
+        private bool Zooms()
+        {
+            return ZoomMode != ZoomMode.None;
+        }
+
+        private bool ZoomsX()
+        {
+            return ZoomMode == ZoomMode.XOnly || ZoomMode == ZoomMode.XY;
+        }
+
+        private bool ZoomsY()
+        {
+            return ZoomMode == ZoomMode.YOnly || ZoomMode == ZoomMode.XY;
+        }
+
         private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
-            if (_isBoxZooming && _transform != null)
+            if (_isBoxZooming)
             {
                 _isBoxZooming = false;
                 _boxRect.Visibility = Visibility.Collapsed;
@@ -409,15 +470,23 @@ namespace DataPlots.Wpf.Plots
                 if (_boxOverlay.Width < 10.0d || _boxOverlay.Height < 10.0d)
                     return; // ignore tiny clicks
 
-                var p1 = _transform.ScreenToData(new PointD(_boxOverlay.Left, _boxOverlay.Top));
-                var p2 = _transform.ScreenToData(new PointD(_boxOverlay.Right, _boxOverlay.Bottom));
+                PointD p1 = _transform.ScreenToData(new PointD(_boxOverlay.Left, _boxOverlay.Top));
+                PointD p2 = _transform.ScreenToData(new PointD(_boxOverlay.Right, _boxOverlay.Bottom));
+                RectD updatedView = RectD.Normalized(p1, p2);
 
-                _currentView = new RectD(
-                    Math.Min(p1.X, p2.X),
-                    Math.Min(p1.Y, p2.Y),
-                    Math.Abs(p2.X - p1.X),
-                    Math.Abs(p2.Y - p1.Y));
+                if (!ZoomsX())
+                {
+                    updatedView.X = _currentView.X;
+                    updatedView.Width = _currentView.Width;
+                }
 
+                if (!ZoomsY())
+                {
+                    updatedView.Y = _currentView.Y;
+                    updatedView.Height = _currentView.Height;
+                }
+
+                _currentView = updatedView;
                 InvalidatePlot();
             }
             else if (_isPanning)
@@ -427,5 +496,6 @@ namespace DataPlots.Wpf.Plots
             }
             base.OnMouseLeftButtonUp(e);
         }
+        #endregion Private Methods
     }
 }
