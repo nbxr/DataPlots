@@ -1,4 +1,4 @@
-﻿namespace DataPlots.Core
+﻿namespace DataPlots.Models
 {
     public interface IPlotModel
     {

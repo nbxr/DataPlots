@@ -1,4 +1,6 @@
-﻿namespace DataPlots.Wpf.Plots
+﻿using DataPlots.Models;
+
+namespace DataPlots.Wpf.Plots
 {
     public class PlotModel : IPlotModel
     {

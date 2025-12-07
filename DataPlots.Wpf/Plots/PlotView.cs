@@ -1,4 +1,5 @@
-﻿using DataPlots.Wpf.Extensions;
+﻿using DataPlots.Models;
+using DataPlots.Wpf.Extensions;
 using DataPlots.Wpf.Utilities;
 using System.Windows.Media.Animation;
 using System.Windows.Shapes;
