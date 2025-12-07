@@ -1,7 +1,5 @@
 ﻿using DataPlots.Models;
 using DataPlots.Wpf.Extensions;
-using DataPlots.Wpf.Utilities;
-using System.Windows.Media.Animation;
 using System.Windows.Shapes;
 using static DataPlots.Wpf.Utilities.CanvasUtilities;
 
@@ -14,7 +12,7 @@ namespace DataPlots.Wpf.Plots
         public event EventHandler<DataPointSelectedEventArgs>? DataPointSelected;
         #endregion Events
         #region Fields
-        private readonly Rectangle _boxRect;
+        private readonly Rectangle _selectionRect;
         private readonly Image _plotImage;
         private readonly ToolTip _toolTip;
         private WriteableBitmap _bitmap;
@@ -32,10 +30,10 @@ namespace DataPlots.Wpf.Plots
         #endregion Fields
         #region Dependency Properties
         public static readonly DependencyProperty ModelProperty =
-            DependencyProperty.Register(nameof(Model), typeof(PlotModel), typeof(PlotView),
+            DependencyProperty.Register(nameof(Model), typeof(IPlotModel), typeof(PlotView),
                 new PropertyMetadata(null, (d, e) =>
                 {
-                    var view = (PlotView)d;
+                    PlotView view = (PlotView)d;
                     view._currentView = RectD.Empty;
                     view.InvalidatePlot();
                 }));
@@ -91,7 +89,7 @@ namespace DataPlots.Wpf.Plots
             ToolTipService.SetInitialShowDelay(this, 0);
             ToolTip = _toolTip;
 
-            _boxRect = new Rectangle()
+            _selectionRect = new Rectangle()
             {
                 Stroke = Brushes.DodgerBlue,
                 StrokeThickness = 2.0d,
@@ -102,7 +100,7 @@ namespace DataPlots.Wpf.Plots
                 Visibility = Visibility.Collapsed
             };
 
-            Children.Add(_boxRect);
+            Children.Add(_selectionRect);
 
             _plotImage = new Image
             {
@@ -342,10 +340,10 @@ namespace DataPlots.Wpf.Plots
                 _boxOverlay.Width = 1.0d;
                 _boxOverlay.Height = 1.0d;
                 _boxStart = e.GetPosition(this);
-                _boxRect.Width = _boxRect.Height = 0;
-                Canvas.SetLeft(_boxRect, _boxStart.X);
-                Canvas.SetTop(_boxRect, _boxStart.Y);
-                _boxRect.Visibility = Visibility.Visible;
+                _selectionRect.Width = _selectionRect.Height = 0;
+                Canvas.SetLeft(_selectionRect, _boxStart.X);
+                Canvas.SetTop(_selectionRect, _boxStart.Y);
+                _selectionRect.Visibility = Visibility.Visible;
                 CaptureMouse();
                 e.Handled = true;
             }
@@ -373,25 +371,24 @@ namespace DataPlots.Wpf.Plots
 
         private void OnMouseMove(object sender, MouseEventArgs e)
         {
-            var pos = e.GetPosition(this);
+            Point pos = e.GetPosition(this);
 
             // Box zoom rubber band
             if (_isBoxZooming)
-            {
-                var current = pos;
-
-                double left = Math.Min(_boxStart.X, current.X);
-                double top = Math.Min(_boxStart.Y, current.Y);
-                double width = Math.Abs(current.X - _boxStart.X);
-                double height = Math.Abs(current.Y - _boxStart.Y);
+            {                
+                double left = Math.Min(_boxStart.X, pos.X);
+                double top = Math.Min(_boxStart.Y, pos.Y);
+                double width = Math.Abs(pos.X - _boxStart.X);
+                double height = Math.Abs(pos.Y - _boxStart.Y);
 
                 _boxOverlay = new Rect(left, top, width, height);
 
-                Canvas.SetLeft(_boxRect, left);
-                Canvas.SetTop(_boxRect, top);
-                _boxRect.Width = width;
-                _boxRect.Height = height;
-                _boxRect.Visibility = Visibility.Visible;
+                // set left and top again to account for dragging to left
+                Canvas.SetLeft(_selectionRect, left);
+                Canvas.SetTop(_selectionRect, top);
+                _selectionRect.Width = width;
+                _selectionRect.Height = height;
+                _selectionRect.Visibility = Visibility.Visible;
             }
             // Panning
             else if (_isPanning)
@@ -465,7 +462,7 @@ namespace DataPlots.Wpf.Plots
             if (_isBoxZooming)
             {
                 _isBoxZooming = false;
-                _boxRect.Visibility = Visibility.Collapsed;
+                _selectionRect.Visibility = Visibility.Collapsed;
                 ReleaseMouseCapture();
 
                 if (_boxOverlay.Width < 10.0d || _boxOverlay.Height < 10.0d)
