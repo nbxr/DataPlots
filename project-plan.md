@@ -31,7 +31,7 @@ Now we **evolve**.
 
 ## PHASE 2 — NEXT MILESTONES
 
-### 1. Configurable Zoom Behavior [x]
+### [x] 1. Configurable Zoom Behavior 
 **Goal:** Allow user to control which axes respond to zoom
 - Add `ZoomMode` enum to `PlotView`:
   ```csharp
