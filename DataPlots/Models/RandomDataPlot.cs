@@ -2,16 +2,21 @@
 
 namespace DataPlots.Models
 {
-    public class RandomDataPlot : IPlotModel
+    public class RandomDataPlot : BaseModel, IPlotModel
     {
+        private readonly ZoomMode zoomMode = ZoomMode.XY;
+
         public IList<ISeries> Series { get; } = new List<ISeries>();
 
         public IList<Axis> Axes { get; } = new List<Axis>() {
-            new Axis(){ Position = AxisPosition.Bottom , Title = "X Axis"},
-            new Axis(){ Position = AxisPosition.Left , Title = "Y Axis"}
+            new Axis(){ Position = AxisPosition.Bottom, Title = "X Axis"},
+            new Axis(){ Position = AxisPosition.Left, Title = "Y Axis"}
         };
 
-        public ZoomMode ZoomMode { get; } = ZoomMode.XY;
+        public ZoomMode ZoomMode
+        {
+            get { return zoomMode; }
+        }
 
         public RandomDataPlot()
         {

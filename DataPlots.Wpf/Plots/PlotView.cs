@@ -1,7 +1,7 @@
 ﻿using DataPlots.Models;
 using DataPlots.Wpf.Extensions;
+using System.ComponentModel;
 using System.Windows.Shapes;
-using static DataPlots.Wpf.Utilities.CanvasUtilities;
 
 namespace DataPlots.Wpf.Plots
 {
@@ -19,7 +19,7 @@ namespace DataPlots.Wpf.Plots
         private IPlotTransform _transform = IPlotTransform.Empty;
         private RectD _currentView = RectD.Empty;
         private RectD _lastRenderRect = RectD.Empty;
-        private ThicknessD _plotPadding = new ThicknessD(60, 30, 30, 50);
+        private ThicknessD _plotPadding = new ThicknessD(60, 50, 60, 50);
         private ISeries? _hoveredSeries;
         private int _hoveredIndex = -1;
         private Point _boxStart;
@@ -27,16 +27,16 @@ namespace DataPlots.Wpf.Plots
         private Point _lastMousePos;
         private bool _isBoxZooming;
         private bool _isPanning;
+        // Label caching
+        private List<TextBlock> inactiveLabels = new List<TextBlock>();
+        private List<TextBlock> activeLabels = new List<TextBlock>();
         #endregion Fields
         #region Dependency Properties
         public static readonly DependencyProperty ModelProperty =
-            DependencyProperty.Register(nameof(Model), typeof(IPlotModel), typeof(PlotView),
-                new PropertyMetadata(null, (d, e) =>
-                {
-                    PlotView view = (PlotView)d;
-                    view._currentView = RectD.Empty;
-                    view.InvalidatePlot();
-                }));
+            DependencyProperty.Register(nameof(Model),
+                typeof(IPlotModel),
+                typeof(PlotView),
+                new PropertyMetadata(null, OnModelChanged));
 
         public static readonly DependencyProperty ZoomModeProperty =
             DependencyProperty.Register(
@@ -44,6 +44,110 @@ namespace DataPlots.Wpf.Plots
                 typeof(ZoomMode),
                 typeof(PlotView),
                 new PropertyMetadata(ZoomMode.XY, OnZoomModeChanged));
+
+        public SolidColorBrush PlotBackgroundColor
+        {
+            get { return (SolidColorBrush)GetValue(PlotBackgroundColorProperty); }
+            set { SetValue(PlotBackgroundColorProperty, value); }
+        }
+
+        // Using a DependencyProperty as the backing store for PlotBackgroundColor.  This enables animation, styling, binding, etc...
+        public static readonly DependencyProperty PlotBackgroundColorProperty =
+            DependencyProperty.Register(nameof(PlotBackgroundColor),
+                typeof(SolidColorBrush),
+                typeof(PlotView),
+                new PropertyMetadata(Colors.White.ToSolidColorBrush()));
+
+        public Brush TooltipBackgroundColor
+        {
+            get { return (Brush)GetValue(TooltipBackgroundColorProperty); }
+            set { SetValue(TooltipBackgroundColorProperty, value); }
+        }
+
+        // Using a DependencyProperty as the backing store for TooltipBackgroundColor.  This enables animation, styling, binding, etc...
+        public static readonly DependencyProperty TooltipBackgroundColorProperty =
+            DependencyProperty.Register(nameof(TooltipBackgroundColor),
+                typeof(Brush),
+                typeof(PlotView),
+                new PropertyMetadata(Colors.Black.ToSolidColorBrush()));
+
+        public Brush TooltipForegroundColor
+        {
+            get { return (Brush)GetValue(TooltipForegroundColorProperty); }
+            set { SetValue(TooltipForegroundColorProperty, value); }
+        }
+
+        // Using a DependencyProperty as the backing store for TooltipForegroundColor.  This enables animation, styling, binding, etc...
+        public static readonly DependencyProperty TooltipForegroundColorProperty =
+            DependencyProperty.Register(nameof(TooltipForegroundColor),
+                typeof(Brush),
+                typeof(PlotView),
+                new PropertyMetadata(Colors.White.ToSolidColorBrush()));
+
+        public Color GridColor
+        {
+            get { return (Color)GetValue(GridColorProperty); }
+            set { SetValue(GridColorProperty, value); }
+        }
+
+        // Using a DependencyProperty as the backing store for GridColor.  This enables animation, styling, binding, etc...
+        public static readonly DependencyProperty GridColorProperty =
+            DependencyProperty.Register(nameof(GridColor),
+                typeof(Color),
+                typeof(PlotView),
+                new PropertyMetadata(Colors.Gray));
+
+        public Color BorderColor
+        {
+            get { return (Color)GetValue(BorderColorProperty); }
+            set { SetValue(BorderColorProperty, value); }
+        }
+
+        // Using a DependencyProperty as the backing store for BorderColor.  This enables animation, styling, binding, etc...
+        public static readonly DependencyProperty BorderColorProperty =
+            DependencyProperty.Register(nameof(BorderColor),
+                typeof(Color),
+                typeof(PlotView),
+                new PropertyMetadata(Colors.Black));
+
+        public Color FontColor
+        {
+            get { return (Color)GetValue(FontColorProperty); }
+            set { SetValue(FontColorProperty, value); }
+        }
+
+        // Using a DependencyProperty as the backing store for FontColor.  This enables animation, styling, binding, etc...
+        public static readonly DependencyProperty FontColorProperty =
+            DependencyProperty.Register(nameof(FontColor),
+                typeof(Color),
+                typeof(PlotView),
+                new PropertyMetadata(Colors.Black));
+
+        public double AxisTitleFontSize
+        {
+            get { return (double)GetValue(AxisTitleFontSizeProperty); }
+            set { SetValue(AxisTitleFontSizeProperty, value); }
+        }
+
+        // Using a DependencyProperty as the backing store for AxisTitleFontSize.  This enables animation, styling, binding, etc...
+        public static readonly DependencyProperty AxisTitleFontSizeProperty =
+            DependencyProperty.Register(nameof(AxisTitleFontSize),
+                typeof(double),
+                typeof(PlotView),
+                new PropertyMetadata(14.0d));
+
+        public double TickLabelFontSize
+        {
+            get { return (double)GetValue(TickLabelFontSizeProperty); }
+            set { SetValue(TickLabelFontSizeProperty, value); }
+        }
+
+        // Using a DependencyProperty as the backing store for TickLabelFontSize.  This enables animation, styling, binding, etc...
+        public static readonly DependencyProperty TickLabelFontSizeProperty =
+            DependencyProperty.Register(nameof(TickLabelFontSize),
+                typeof(double),
+                typeof(PlotView),
+                new PropertyMetadata(12.0d));
         #endregion Dependency Properties
         #region Properties
         public ZoomMode ZoomMode
@@ -64,7 +168,10 @@ namespace DataPlots.Wpf.Plots
 
             set
             {
+                if (GetValue(ModelProperty) is IPlotModel model)
+                    model.PropertyChanged -= OnModelPropertyChanged;
                 SetValue(ModelProperty, value);
+                value.PropertyChanged += OnModelPropertyChanged;
                 _currentView = RectD.Empty;
                 InvalidatePlot();
             }
@@ -74,15 +181,12 @@ namespace DataPlots.Wpf.Plots
         public PlotView()
         {
             _bitmap = new WriteableBitmap(1, 1, 96, 96, PixelFormats.Pbgra32, null);
-            Background = Brushes.WhiteSmoke;
             SnapsToDevicePixels = true;
 
             _toolTip = new ToolTip()
             {
                 Placement = System.Windows.Controls.Primitives.PlacementMode.Mouse,
                 HasDropShadow = true,
-                Background = Brushes.Black,
-                Foreground = Brushes.White,
                 Padding = new Thickness(6.0d)
             };
 
@@ -110,29 +214,28 @@ namespace DataPlots.Wpf.Plots
             };
 
             Children.Add(_plotImage);
-            Canvas.SetZIndex(_plotImage, -100);
+            SetZIndex(_plotImage, -100);
+
+            UpdateBrushes();
 
             MouseLeftButtonDown += OnMouseLeftButtonDown;
             MouseLeftButtonUp += OnMouseLeftButtonUp;
             MouseMove += OnMouseMove;
             MouseWheel += OnMouseWheel;
-            MouseLeave += (_, __) => UpdateHover(null, -1, null);
+            MouseLeave += OnMouseLeave;
             SizeChanged += (_, __) => InvalidatePlot();
             Loaded += (_, __) => InvalidatePlot();
         }
+
+        private void UpdateBrushes()
+        {
+            _toolTip.Background = TooltipBackgroundColor;
+            _toolTip.Foreground = TooltipForegroundColor;
+            Background = PlotBackgroundColor;
+        }
         #endregion Constructor
         #region Methods
-        private static void OnZoomModeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-        {
-            PlotView plotView = (PlotView)d;
-            // Optional: Invalidate rendering and reset zoom if switching to None
-            if (plotView.ZoomMode == ZoomMode.None)
-            {
-                // Reset transform to full view
-                plotView.ZoomToFit();
-            }
-            plotView.InvalidateVisual(); // Trigger re-render if axes need updating
-        }
+
         #endregion Methods
         #region Private Methods
         private void InvalidatePlot()
@@ -170,8 +273,7 @@ namespace DataPlots.Wpf.Plots
             _transform = new PlotTransform(dataRect, renderRect);
 
             // Clear old labels and add new ones
-            var oldLabels = Children.OfType<TextBlock>().ToList();
-            foreach (var tb in oldLabels) Children.Remove(tb);
+            HideOldLabels();
 
             _bitmap.Clear(Colors.WhiteSmoke);
             DrawGridLines(renderRect, dataRect);
@@ -179,9 +281,19 @@ namespace DataPlots.Wpf.Plots
             DrawAxesAndLabels(renderRect, dataRect);
         }
 
+        private void HideOldLabels()
+        {
+            foreach (TextBlock tb in activeLabels)
+            {
+                tb.Visibility = Visibility.Collapsed;
+                inactiveLabels.Add(tb);
+            }
+            activeLabels.Clear();
+        }
+
         private void DrawGridLines(RectD renderRect, RectD dataRect)
         {
-            var gridColor = Color.FromArgb(40, 0, 0, 0); // Light gray
+            var gridColor = GridColor; // Light gray
 
             // Vertical grid lines (X ticks)
             var (xTicks, _) = TickGenerator.Generate(dataRect.X, dataRect.Right);
@@ -222,7 +334,7 @@ namespace DataPlots.Wpf.Plots
                     foreach (var pt in scatter.Points)
                     {
                         var sp = _transform!.DataToScreen(new PointD(pt.X, pt.Y));
-                        _bitmap.FillCircle(sp.X, sp.Y, scatter.PointSize, pt.Selected ? selected : color, Colors.Black, 0.5d);
+                        _bitmap.FillCircle(sp.X, sp.Y, scatter.PointSize, pt.Selected ? selected : color, BorderColor, 0.5d);
                     }
                 }
             }
@@ -230,53 +342,108 @@ namespace DataPlots.Wpf.Plots
 
         private void DrawAxesAndLabels(RectD renderRect, RectD dataRect)
         {
-            var axisColor = Colors.Black;
-
-            // X axis
-            var (xTicks, xLabels) = TickGenerator.Generate(dataRect.X, dataRect.Right);
-            for (int i = 0; i < xTicks.Length; i++)
-            {
-                var sp = _transform.DataToScreen(new PointD(xTicks[i], dataRect.Y));
-                _bitmap.DrawLine(sp.X, renderRect.Bottom, sp.X, renderRect.Bottom - 6, axisColor);
-                AddLabel(this, xLabels[i], sp.X, renderRect.Bottom + 8, Colors.Black, centerX: true, centerY: true);
-            }
-
-            // Y axis
-            var (yTicks, yLabels) = TickGenerator.Generate(dataRect.Y, dataRect.Bottom);
-            for (int i = 0; i < yTicks.Length; i++)
-            {
-                var sp = _transform.DataToScreen(new PointD(dataRect.X, yTicks[i]));
-                _bitmap.DrawLine(renderRect.Left, sp.Y, renderRect.Left + 6, sp.Y, axisColor);
-
-                // Measure label width
-                var labelWidth = yLabels[i].MeasureText(12.0d).Width;
-                // Dynamic offset: always fully visible, never clipped
-                double labelX = renderRect.Left - labelWidth - 12.0d; // 12px padding from axis
-                AddLabel(this, yLabels[i], labelX, sp.Y, Colors.Black, centerX: false, centerY: true);
-            }
-
             // Titles
-            var xAxis = Model.Axes.First(a => a.Position == AxisPosition.Bottom);
-            AddLabel(this,
-                xAxis.Title!,
-                renderRect.Left + renderRect.Width / 2,
-                renderRect.Bottom + _plotPadding.Bottom * 0.6d,
-                Colors.Black,
-                14);
-
-            var yAxis = Model.Axes.First(a => a.Position == AxisPosition.Left);
-            AddLabel(
-                this,
-                yAxis.Title!,
-                _plotPadding.Left * 0.4d,
-                renderRect.Top + renderRect.Height / 2.0d,
-                Colors.Black,
-                14.0d,
-                -90.0d,
-                centerX: true,
-                centerY: true);
+            foreach (Axis axis in Model.Axes)
+            {
+                DrawAxisTicks(renderRect, dataRect, axis);
+                DrawAxisTitle(renderRect, axis);
+            }
         }
 
+        private void DrawAxisTicks(RectD renderRect, RectD dataRect, Axis axis)
+        {
+            switch (axis.Position)
+            {
+                case AxisPosition.Bottom:
+                    // X axis
+                    var (xbTicks, xbLabels) = TickGenerator.Generate(dataRect.X, dataRect.Right);
+                    for (int i = 0; i < xbTicks.Length; i++)
+                        DrawXTick(renderRect, dataRect, xbTicks[i], axis.TickLength, xbLabels[i], false);
+                    break;
+                case AxisPosition.Left:
+                    // Y axis
+                    var (ylTicks, ylLabels) = TickGenerator.Generate(dataRect.Y, dataRect.Bottom);
+                    for (int i = 0; i < ylTicks.Length; i++)
+                        DrawYTick(renderRect, dataRect, ylTicks[i], axis.TickLength, ylLabels[i], true);
+                    break;
+                case AxisPosition.Top:
+                    // X axis
+                    var (xtTicks, xtLabels) = TickGenerator.Generate(dataRect.X, dataRect.Right);
+                    for (int i = 0; i < xtTicks.Length; i++)
+                        DrawXTick(renderRect, dataRect, xtTicks[i], axis.TickLength, xtLabels[i], true);
+                    break;
+                case AxisPosition.Right:
+                    // Y axis
+                    var (yrTicks, yrLabels) = TickGenerator.Generate(dataRect.Y, dataRect.Bottom);
+                    for (int i = 0; i < yrTicks.Length; i++)
+                        DrawYTick(renderRect, dataRect, yrTicks[i], axis.TickLength, yrLabels[i], false);
+                    break;
+            }
+        }
+
+        private void DrawXTick(RectD renderRect, RectD dataRect, double tick, double length, string label, bool isTop)
+        {
+            PointD sp = _transform.DataToScreen(new PointD(tick, dataRect.Y));
+            double edgeY = isTop ? renderRect.Top : renderRect.Bottom;
+            double tickDir = isTop ? -1.0d : +1.0d;
+            double y0 = edgeY;
+            double y1 = edgeY + tickDir * length;
+            _bitmap.DrawLine(sp.X, y0, sp.X, y1, BorderColor);
+
+            double labelY = edgeY + tickDir * (length + 8);
+            AddLabel(label, sp.X, labelY, FontColor, TickLabelFontSize, centerX: true, centerY: true);
+        }
+
+        private void DrawYTick(RectD renderRect, RectD dataRect, double tick, double length, string label, bool isLeft)
+        {
+            PointD sp = _transform.DataToScreen(new PointD(dataRect.X, tick));
+            double edgeX = isLeft ? renderRect.Left : renderRect.Right;
+            double tickDir = isLeft ? -1.0d : +1.0d;
+            double x0 = edgeX;
+            double x1 = edgeX + tickDir * length;
+            _bitmap.DrawLine(x0, sp.Y, x1, sp.Y, BorderColor);
+
+            // Measure label width
+            var labelWidth = !isLeft ? 0.0d : label.MeasureText(TickLabelFontSize).Width;
+            // Dynamic offset: always fully visible, never clipped
+            double labelX = edgeX + tickDir * (labelWidth + 12.0d); // 12px padding from axis
+            AddLabel(label, labelX, sp.Y, FontColor, TickLabelFontSize, centerX: false, centerY: true);
+        }
+
+        private void DrawAxisTitle(RectD renderRect, Axis axis)
+        {
+            double x, y, angle;
+            bool cx, cy;
+            switch (axis.Position)
+            {
+                case AxisPosition.Bottom:
+                    x = renderRect.Left + renderRect.Width / 2;
+                    y = renderRect.Bottom + _plotPadding.Bottom * 0.6d;
+                    cx = cy = true;
+                    angle = 0.0d;
+                    break;
+                case AxisPosition.Top:
+                    x = renderRect.Left + renderRect.Width / 2;
+                    y = renderRect.Top - _plotPadding.Top * 0.6d;
+                    cx = cy = true;
+                    angle = 0.0d;
+                    break;
+                case AxisPosition.Left:
+                    x = _plotPadding.Left * 0.4d;
+                    y = renderRect.Top + renderRect.Height / 2.0d;
+                    cx = cy = true;
+                    angle = -90.0d;
+                    break;
+                case AxisPosition.Right:
+                default:
+                    x = renderRect.Right + _plotPadding.Right * 0.8d;
+                    y = renderRect.Top + renderRect.Height / 2.0d;
+                    cx = cy = true;
+                    angle = +90.0d;
+                    break;
+            }
+            AddLabel(axis.Title!, x, y, FontColor, AxisTitleFontSize, angle, cx, cy);
+        }
 
         private void ZoomToFit()
         {
@@ -307,6 +474,86 @@ namespace DataPlots.Wpf.Plots
             DataPointHoverChanged?.Invoke(this, new DataPointHoverEventArgs(series, index, point));
         }
 
+        private bool Zooms()
+        {
+            return ZoomMode != ZoomMode.None;
+        }
+
+        private bool ZoomsX()
+        {
+            return ZoomMode == ZoomMode.XOnly || ZoomMode == ZoomMode.XY;
+        }
+
+        private bool ZoomsY()
+        {
+            return ZoomMode == ZoomMode.YOnly || ZoomMode == ZoomMode.XY;
+        }
+
+        public void AddLabel(string text, double x, double y,
+            Color color, double fontSize = 12, double angle = 0, bool centerX = true, bool centerY = true)
+        {
+            (bool add, TextBlock tb) = GetLabel();
+            tb.Text = text;
+            tb.Foreground = new SolidColorBrush(color);
+            tb.FontSize = fontSize;
+            tb.RenderTransformOrigin = new Point(0.5d, 0.5d);
+            tb.IsHitTestVisible = false;
+            tb.Visibility = Visibility.Visible;
+            tb.RenderTransform = new RotateTransform(angle);
+
+            if (centerX || centerY)
+            {
+                tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+                tb.Arrange(new Rect(tb.DesiredSize));
+            }
+
+            double left = centerX ? x - tb.ActualWidth / 2.0d : x;
+            double top = centerY ? y - tb.ActualHeight / 2.0d : y;
+
+            SetLeft(tb, left);
+            SetTop(tb, top);
+
+            if (add)
+                Children.Add(tb);
+        }
+
+        private (bool add, TextBlock) GetLabel()
+        {
+            if (inactiveLabels.Count > 0)
+            {
+                TextBlock label = inactiveLabels[^1];
+                inactiveLabels.RemoveAt(inactiveLabels.Count - 1);
+                activeLabels.Add(label);
+                return (false, label);
+            }
+            else
+            {
+                TextBlock label = new TextBlock();
+                activeLabels.Add(label);
+                return (true, label);
+            }
+        }
+        #endregion Methods
+        #region Event Handlers
+        private static void OnModelChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            PlotView view = (PlotView)d;
+            view._currentView = RectD.Empty;
+            view.InvalidatePlot();
+            view.UpdateBrushes();
+        }
+
+        private static void OnZoomModeChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            PlotView plotView = (PlotView)d;
+            // Optional: Invalidate rendering and reset zoom if switching to None
+            if (plotView.ZoomMode == ZoomMode.None)
+            {
+                // Reset transform to full view
+                plotView.ZoomToFit();
+            }
+            plotView.InvalidateVisual(); // Trigger re-render if axes need updating
+        }
         private void OnMouseWheel(object sender, MouseWheelEventArgs e)
         {
             if (ZoomMode == ZoomMode.None) return;
@@ -341,8 +588,8 @@ namespace DataPlots.Wpf.Plots
                 _boxOverlay.Height = 1.0d;
                 _boxStart = e.GetPosition(this);
                 _selectionRect.Width = _selectionRect.Height = 0;
-                Canvas.SetLeft(_selectionRect, _boxStart.X);
-                Canvas.SetTop(_selectionRect, _boxStart.Y);
+                SetLeft(_selectionRect, _boxStart.X);
+                SetTop(_selectionRect, _boxStart.Y);
                 _selectionRect.Visibility = Visibility.Visible;
                 CaptureMouse();
                 e.Handled = true;
@@ -375,7 +622,7 @@ namespace DataPlots.Wpf.Plots
 
             // Box zoom rubber band
             if (_isBoxZooming)
-            {                
+            {
                 double left = Math.Min(_boxStart.X, pos.X);
                 double top = Math.Min(_boxStart.Y, pos.Y);
                 double width = Math.Abs(pos.X - _boxStart.X);
@@ -384,8 +631,8 @@ namespace DataPlots.Wpf.Plots
                 _boxOverlay = new Rect(left, top, width, height);
 
                 // set left and top again to account for dragging to left
-                Canvas.SetLeft(_selectionRect, left);
-                Canvas.SetTop(_selectionRect, top);
+                SetLeft(_selectionRect, left);
+                SetTop(_selectionRect, top);
                 _selectionRect.Width = width;
                 _selectionRect.Height = height;
                 _selectionRect.Visibility = Visibility.Visible;
@@ -442,21 +689,6 @@ namespace DataPlots.Wpf.Plots
             }
         }
 
-        private bool Zooms()
-        {
-            return ZoomMode != ZoomMode.None;
-        }
-
-        private bool ZoomsX()
-        {
-            return ZoomMode == ZoomMode.XOnly || ZoomMode == ZoomMode.XY;
-        }
-
-        private bool ZoomsY()
-        {
-            return ZoomMode == ZoomMode.YOnly || ZoomMode == ZoomMode.XY;
-        }
-
         private void OnMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
         {
             if (_isBoxZooming)
@@ -493,6 +725,21 @@ namespace DataPlots.Wpf.Plots
                 ReleaseMouseCapture();
             }
             base.OnMouseLeftButtonUp(e);
+        }
+
+        private void OnMouseLeave(object sender, MouseEventArgs e)
+        {
+            UpdateHover(null, -1, null);
+            if (_isPanning)
+            {
+                _isPanning = false;
+                ReleaseMouseCapture();
+            }
+        }
+
+        private void OnModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+        {
+            InvalidatePlot();
         }
         #endregion Private Methods
     }
