@@ -73,7 +73,12 @@ namespace DataPlots.Models
             if (!any)
                 return RectD.Empty;
 
-            return new RectD(minX, minY, maxX - minX, maxY - minY);
+            double padding = 4.0d;
+            return new RectD(
+                minX - padding, 
+                minY - padding, 
+                maxX - minX + padding * 2.0d, 
+                maxY - minY + padding * 2.0d);
         }
     }
 }

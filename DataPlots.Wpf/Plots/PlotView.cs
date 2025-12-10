@@ -1,6 +1,7 @@
 ﻿using DataPlots.Models;
 using DataPlots.Wpf.Extensions;
 using System.ComponentModel;
+using System.Data;
 using System.Windows.Shapes;
 
 namespace DataPlots.Wpf.Plots
@@ -18,8 +19,9 @@ namespace DataPlots.Wpf.Plots
         private WriteableBitmap _bitmap;
         private IPlotTransform _transform = IPlotTransform.Empty;
         private RectD _currentView = RectD.Empty;
-        private RectD _lastRenderRect = RectD.Empty;
+        private RectD _innerRenderRect = RectD.Empty;
         private ThicknessD _plotPadding = new ThicknessD(60, 50, 60, 50);
+        private Thickness _effectivePadding = new Thickness(60, 50, 60, 50);
         private ISeries? _hoveredSeries;
         private int _hoveredIndex = -1;
         private Point _boxStart;
@@ -47,9 +49,9 @@ namespace DataPlots.Wpf.Plots
 
         // Using a DependencyProperty as the backing store for PlotPadding.  This enables animation, styling, binding, etc...
         public static readonly DependencyProperty PlotPaddingProperty =
-            DependencyProperty.Register(nameof(PlotPadding), 
-                typeof(Thickness), 
-                typeof(PlotView), 
+            DependencyProperty.Register(nameof(PlotPadding),
+                typeof(Thickness),
+                typeof(PlotView),
                 new PropertyMetadata(new Thickness(60.0d, 50.0d, 60.0d, 50.0d),
                 OnPlotPaddingChanged));
 
@@ -268,14 +270,20 @@ namespace DataPlots.Wpf.Plots
             if (_currentView == RectD.Empty)
                 _currentView = Model.CalculateDataRect();
 
-            int w = (int)ActualWidth;
-            int h = (int)ActualHeight;
+            var padding = PlotPadding;
 
-            if (_bitmap.PixelWidth != w || _bitmap.PixelHeight != h)
+            int innerWidth = (int)Math.Max(1, (ActualWidth - padding.Left - padding.Right));
+            int innerHeight = (int)Math.Max(1, (ActualHeight - padding.Top - padding.Bottom));
+
+            if (_bitmap.PixelWidth != innerWidth || _bitmap.PixelHeight != innerHeight)
             {
-                _bitmap = new WriteableBitmap(w, h, 96, 96, PixelFormats.Pbgra32, null);
+                _bitmap = new WriteableBitmap(innerWidth, innerHeight, 96, 96, PixelFormats.Pbgra32, null);
                 _plotImage.Source = _bitmap;
             }
+
+            _plotImage.Margin = new Thickness(padding.Left, padding.Top, padding.Right, padding.Bottom);
+            _plotImage.Width = innerWidth;
+            _plotImage.Height = innerHeight;
 
             Render();
             InvalidateVisual();
@@ -287,21 +295,100 @@ namespace DataPlots.Wpf.Plots
             if (dataRect.Width <= 0) dataRect.Width = 1;
             if (dataRect.Height <= 0) dataRect.Height = 1;
 
-            var renderRect = new RectD(
-                _plotPadding.Left, _plotPadding.Top,
-                _bitmap.PixelWidth - _plotPadding.Left - _plotPadding.Right,
-                _bitmap.PixelHeight - _plotPadding.Top - _plotPadding.Bottom);
+            var userPadding = PlotPadding;
+            double extraLeft = 0.0d;
+            double extraRight = 0.0d;
+            double maxLabelExtent = 0.0d;
 
-            _lastRenderRect = renderRect;
+            MeasureExtraPadding(ref extraLeft, ref extraRight, ref maxLabelExtent, dataRect);
+
+            _effectivePadding = new Thickness(
+                Math.Max(userPadding.Left, extraLeft),
+                userPadding.Top,
+                Math.Max(userPadding.Right, extraRight),
+                userPadding.Bottom);
+
+            int innerWidth = (int)Math.Max(1.0d, ActualWidth - _effectivePadding.Left - _effectivePadding.Right);
+            int innerHeight = (int)Math.Max(1.0d, ActualHeight - _effectivePadding.Top - _effectivePadding.Bottom);
+
+            // Resize bitmap if needed
+            if (_bitmap.PixelWidth != innerWidth || _bitmap.PixelHeight != innerHeight)
+            {
+                _bitmap = new WriteableBitmap(innerWidth, innerHeight, 96, 96, PixelFormats.Pbgra32, null);
+                _plotImage.Source = _bitmap;
+            }
+
+            _plotImage.Margin = new Thickness(_effectivePadding.Left, _effectivePadding.Top,
+                _effectivePadding.Right, _effectivePadding.Bottom);
+            _plotImage.Width = innerWidth;
+            _plotImage.Height = innerHeight;
+
+            var renderRect = new RectD(0.0d, 0.0d, innerWidth, innerHeight);
+
+            _innerRenderRect = new RectD(
+                _effectivePadding.Left,
+                _effectivePadding.Top,
+                innerWidth,
+                innerHeight);
+
             _transform = new PlotTransform(dataRect, renderRect);
 
             // Clear old labels and add new ones
             HideOldLabels();
 
-            _bitmap.Clear(Colors.WhiteSmoke);
+            _bitmap.Clear(PlotBackgroundColor.Color);
+
             DrawGridLines(renderRect, dataRect);
             DrawPlotContent(renderRect, dataRect);
             DrawAxesAndLabels(renderRect, dataRect);
+        }
+
+        private void MeasureExtraPadding(ref double extraLeft, ref double extraRight, ref double maxLabelExtent, RectD dataRect)
+        {
+            double[] ticks = Array.Empty<double>();
+            string[] labels = Array.Empty<string>();
+            foreach (Axis axis in Model.Axes)
+            {
+                if (!axis.IsVisible) continue;
+
+                if (!string.IsNullOrEmpty(axis.Title))
+                {
+                    if (axis.Position == AxisPosition.Left)
+                    {
+                        (ticks, labels) = TickGenerator.Generate(dataRect.Y, dataRect.Bottom);
+                    }
+                    else if (axis.Position == AxisPosition.Right)
+                    {
+                        (ticks, labels) = TickGenerator.Generate(dataRect.Y, dataRect.Bottom);
+                    }
+
+                    if (axis.Position == AxisPosition.Left || axis.Position == AxisPosition.Right)
+                    {
+                        // 1. Measure all tick labels for this axis
+                        foreach (string label in labels)
+                        {
+                            if (string.IsNullOrEmpty(label)) continue;
+                            Size size = label.MeasureText(TickLabelFontSize);
+                            maxLabelExtent = Math.Max(maxLabelExtent, size.Width);
+                        }
+
+                        // 2. Measure title (rotated → height becomes the horizontal extent)
+                        if (!string.IsNullOrEmpty(axis.Title))
+                        {
+                            Size titleSize = axis.Title.MeasureText(AxisTitleFontSize);
+                            maxLabelExtent = Math.Max(maxLabelExtent, titleSize.Height); // rotated!
+                        }
+
+                        // 3. Add some breathing room (10–15 px is standard)
+                        double required = maxLabelExtent + 15; // 15 = tick length + gap
+
+                        if (axis.Position == AxisPosition.Left)
+                            extraLeft = Math.Max(extraLeft, required);
+                        else if (axis.Position == AxisPosition.Right)
+                            extraRight = Math.Max(extraRight, required);
+                    }
+                }
+            }
         }
 
         private void HideOldLabels()
@@ -407,61 +494,73 @@ namespace DataPlots.Wpf.Plots
         private void DrawXTick(RectD renderRect, RectD dataRect, double tick, double length, string label, bool isTop)
         {
             PointD sp = _transform.DataToScreen(new PointD(tick, dataRect.Y));
-            double edgeY = isTop ? renderRect.Top : renderRect.Bottom;
+
+            double screenX = sp.X;
+            double controlX = PlotPadding.Left + screenX;
+
+            double edgeY = isTop ? PlotPadding.Top : (ActualHeight - PlotPadding.Bottom);
             double tickDir = isTop ? -1.0d : +1.0d;
-            double y0 = edgeY;
-            double y1 = edgeY + tickDir * length;
-            _bitmap.DrawLine(sp.X, y0, sp.X, y1, BorderColor);
+
+            //double y0 = edgeY;
+            //double y1 = edgeY + tickDir * length;
+            //_bitmap.DrawLine(sp.X, y0, sp.X, y1, BorderColor);
 
             double labelY = edgeY + tickDir * (length + 8);
-            AddLabel(label, sp.X, labelY, FontColor, TickLabelFontSize, centerX: true, centerY: true);
+            AddLabel(label, controlX, labelY, FontColor, TickLabelFontSize, centerX: true, centerY: true);
         }
 
         private void DrawYTick(RectD renderRect, RectD dataRect, double tick, double length, string label, bool isLeft)
         {
             PointD sp = _transform.DataToScreen(new PointD(dataRect.X, tick));
-            double edgeX = isLeft ? renderRect.Left : renderRect.Right;
+
+            double screenY = sp.Y;
+            double controlY = PlotPadding.Top + screenY;
+
+            double edgeX = isLeft ? PlotPadding.Left : (ActualWidth - PlotPadding.Right);
             double tickDir = isLeft ? -1.0d : +1.0d;
-            double x0 = edgeX;
-            double x1 = edgeX + tickDir * length;
-            _bitmap.DrawLine(x0, sp.Y, x1, sp.Y, BorderColor);
+
+            //double x0 = edgeX;
+            //double x1 = edgeX + tickDir * length;
+            //_bitmap.DrawLine(x0, sp.Y, x1, sp.Y, BorderColor);
 
             // Measure label width
             var labelWidth = !isLeft ? 0.0d : label.MeasureText(TickLabelFontSize).Width;
             // Dynamic offset: always fully visible, never clipped
             double labelX = edgeX + tickDir * (labelWidth + 12.0d); // 12px padding from axis
-            AddLabel(label, labelX, sp.Y, FontColor, TickLabelFontSize, centerX: false, centerY: true);
+            AddLabel(label, labelX, controlY, FontColor, TickLabelFontSize, centerX: false, centerY: true);
         }
 
         private void DrawAxisTitle(RectD renderRect, Axis axis)
         {
-            double x, y, angle;
-            bool cx, cy;
+            if (string.IsNullOrEmpty(axis.Title))
+                return;
+
+            double x, y;
+            double angle = 0.0d;
+            bool cx = true;
+            bool cy = true;
+
+            Thickness padding = PlotPadding;
             switch (axis.Position)
             {
                 case AxisPosition.Bottom:
-                    x = renderRect.Left + renderRect.Width / 2;
-                    y = renderRect.Bottom + _plotPadding.Bottom * 0.6d;
-                    cx = cy = true;
-                    angle = 0.0d;
+                    x = _innerRenderRect.Left + renderRect.Width * 0.5d;
+                    y = _innerRenderRect.Bottom + padding.Bottom * 0.6d;
                     break;
                 case AxisPosition.Top:
-                    x = renderRect.Left + renderRect.Width / 2;
-                    y = renderRect.Top - _plotPadding.Top * 0.6d;
-                    cx = cy = true;
-                    angle = 0.0d;
+                    x = _innerRenderRect.Left + renderRect.Width * 0.5d;
+                    y = _innerRenderRect.Top - padding.Top * 0.4d;
                     break;
                 case AxisPosition.Left:
-                    x = _plotPadding.Left * 0.4d;
-                    y = renderRect.Top + renderRect.Height / 2.0d;
-                    cx = cy = true;
+                    x = axis.Title!.MeasureText(AxisTitleFontSize).Height * -0.3;
+                    y = _innerRenderRect.Top + renderRect.Height * 0.5d;
+                    cx = false;
                     angle = -90.0d;
                     break;
                 case AxisPosition.Right:
                 default:
-                    x = renderRect.Right + _plotPadding.Right * 0.8d;
-                    y = renderRect.Top + renderRect.Height / 2.0d;
-                    cx = cy = true;
+                    x = ActualWidth - _effectivePadding.Right * 0.35d;
+                    y = _innerRenderRect.Top + renderRect.Height * 0.5d;
                     angle = +90.0d;
                     break;
             }
@@ -668,10 +767,10 @@ namespace DataPlots.Wpf.Plots
                 double dy = 0.0d;
 
                 if (ZoomsX())
-                    dx = delta.X * _currentView.Width / _lastRenderRect.Width;
+                    dx = delta.X * _currentView.Width / _innerRenderRect.Width;
 
                 if (ZoomsY())
-                    dy = -delta.Y * _currentView.Height / _lastRenderRect.Height;
+                    dy = -delta.Y * _currentView.Height / _innerRenderRect.Height;
 
                 _currentView = new RectD(
                     _currentView.X + dx,
@@ -683,17 +782,22 @@ namespace DataPlots.Wpf.Plots
                 InvalidatePlot();
             }
             // Hovering
-            else 
+            else
             {
                 ISeries? bestSeries = null;
                 int bestIndex = -1;
-                if (_lastRenderRect.Contains(pos.X, pos.Y))
+                if (pos.X >= PlotPadding.Left && pos.X < ActualWidth - PlotPadding.Right &&
+                    pos.Y >= PlotPadding.Top && pos.Y < ActualHeight - PlotPadding.Bottom)
                 {
                     double bestDist = double.MaxValue;
-                    PointD posD = pos.ToPointD();
+                    //PointD posD = pos.ToPointD();
+                    PointD localPos = new PointD(
+                        pos.X - PlotPadding.Left,
+                        pos.Y - PlotPadding.Top);
+
                     foreach (ISeries series in Model.Series.Where(s => s.IsVisible))
                     {
-                        var hit = series.GetNearestPoint(posD, _transform, 12.0d);
+                        var hit = series.GetNearestPoint(localPos, _transform, 12.0d);
                         if (hit.HasValue && hit.Value.DistancePixels < bestDist)
                         {
                             bestDist = hit.Value.DistancePixels;
@@ -726,8 +830,14 @@ namespace DataPlots.Wpf.Plots
                 if (_boxOverlay.Width < 10.0d || _boxOverlay.Height < 10.0d)
                     return; // ignore tiny clicks
 
-                PointD p1 = _transform.ScreenToData(new PointD(_boxOverlay.Left, _boxOverlay.Top));
-                PointD p2 = _transform.ScreenToData(new PointD(_boxOverlay.Right, _boxOverlay.Bottom));
+                PointD p1 = _transform.ScreenToData(new PointD(
+                    _boxOverlay.Left - _innerRenderRect.Left,
+                    _boxOverlay.Top - _innerRenderRect.Top));
+
+                PointD p2 = _transform.ScreenToData(new PointD(
+                    _boxOverlay.Right - _innerRenderRect.Left,
+                    _boxOverlay.Bottom - _innerRenderRect.Top));
+
                 RectD updatedView = RectD.Normalized(p1, p2);
 
                 if (!ZoomsX())
