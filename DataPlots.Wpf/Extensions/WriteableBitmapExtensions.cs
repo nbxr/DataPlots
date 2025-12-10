@@ -142,7 +142,8 @@ internal static class WriteableBitmapExtensions
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void FillEllipse(this WriteableBitmap bmp, double cx, double cy, double rx, double ry, Color color)
     {
-        if (rx <= 0 || ry <= 0 || color.A == 0) return;
+        if (rx <= 0 || ry <= 0 || color.A == 0) 
+            return;
 
         // Bounding box with 2px margin for perfect AA
         int x0 = Math.Max(0, (int)Math.Floor(cx - rx - 1.5));
@@ -150,7 +151,8 @@ internal static class WriteableBitmapExtensions
         int y0 = Math.Max(0, (int)Math.Floor(cy - ry - 1.5));
         int y1 = Math.Min(bmp.PixelHeight - 1, (int)Math.Ceiling(cy + ry + 1.5));
 
-        if (x0 >= x1 || y0 >= y1) return;
+        if (x0 >= x1 || y0 >= y1) 
+            return;
 
         byte aSrc = color.A;
         byte rSrc = color.R;

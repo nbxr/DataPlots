@@ -45,10 +45,21 @@ namespace DataPlots.Wpf.Plots
                 typeof(PlotView),
                 new PropertyMetadata(ZoomMode.XY, OnZoomModeChanged));
 
-        public SolidColorBrush PlotBackgroundColor
+        // Using a DependencyProperty as the backing store for PlotPadding.  This enables animation, styling, binding, etc...
+        public static readonly DependencyProperty PlotPaddingProperty =
+            DependencyProperty.Register(nameof(PlotPadding), 
+                typeof(Thickness), 
+                typeof(PlotView), 
+                new PropertyMetadata(new Thickness(60.0d, 50.0d, 60.0d, 50.0d),
+                OnPlotPaddingChanged));
+
+        private static void OnPlotPaddingChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
-            get { return (SolidColorBrush)GetValue(PlotBackgroundColorProperty); }
-            set { SetValue(PlotBackgroundColorProperty, value); }
+            if (d is PlotView view)
+            {
+                view.InvalidatePlot(); // Re-render when padding changes
+                view._plotImage.Margin = (Thickness)e.NewValue;
+            }
         }
 
         // Using a DependencyProperty as the backing store for PlotBackgroundColor.  This enables animation, styling, binding, etc...
@@ -58,24 +69,12 @@ namespace DataPlots.Wpf.Plots
                 typeof(PlotView),
                 new PropertyMetadata(Colors.White.ToSolidColorBrush()));
 
-        public Brush TooltipBackgroundColor
-        {
-            get { return (Brush)GetValue(TooltipBackgroundColorProperty); }
-            set { SetValue(TooltipBackgroundColorProperty, value); }
-        }
-
         // Using a DependencyProperty as the backing store for TooltipBackgroundColor.  This enables animation, styling, binding, etc...
         public static readonly DependencyProperty TooltipBackgroundColorProperty =
             DependencyProperty.Register(nameof(TooltipBackgroundColor),
                 typeof(Brush),
                 typeof(PlotView),
                 new PropertyMetadata(Colors.Black.ToSolidColorBrush()));
-
-        public Brush TooltipForegroundColor
-        {
-            get { return (Brush)GetValue(TooltipForegroundColorProperty); }
-            set { SetValue(TooltipForegroundColorProperty, value); }
-        }
 
         // Using a DependencyProperty as the backing store for TooltipForegroundColor.  This enables animation, styling, binding, etc...
         public static readonly DependencyProperty TooltipForegroundColorProperty =
@@ -84,18 +83,42 @@ namespace DataPlots.Wpf.Plots
                 typeof(PlotView),
                 new PropertyMetadata(Colors.White.ToSolidColorBrush()));
 
-        public Color GridColor
-        {
-            get { return (Color)GetValue(GridColorProperty); }
-            set { SetValue(GridColorProperty, value); }
-        }
-
         // Using a DependencyProperty as the backing store for GridColor.  This enables animation, styling, binding, etc...
         public static readonly DependencyProperty GridColorProperty =
             DependencyProperty.Register(nameof(GridColor),
                 typeof(Color),
                 typeof(PlotView),
                 new PropertyMetadata(Colors.Gray));
+
+        public SolidColorBrush PlotBackgroundColor
+        {
+            get { return (SolidColorBrush)GetValue(PlotBackgroundColorProperty); }
+            set { SetValue(PlotBackgroundColorProperty, value); }
+        }
+
+        public Thickness PlotPadding
+        {
+            get { return (Thickness)GetValue(PlotPaddingProperty); }
+            set { SetValue(PlotPaddingProperty, value); }
+        }
+
+        public Brush TooltipBackgroundColor
+        {
+            get { return (Brush)GetValue(TooltipBackgroundColorProperty); }
+            set { SetValue(TooltipBackgroundColorProperty, value); }
+        }
+
+        public Brush TooltipForegroundColor
+        {
+            get { return (Brush)GetValue(TooltipForegroundColorProperty); }
+            set { SetValue(TooltipForegroundColorProperty, value); }
+        }
+
+        public Color GridColor
+        {
+            get { return (Color)GetValue(GridColorProperty); }
+            set { SetValue(GridColorProperty, value); }
+        }
 
         public Color BorderColor
         {
@@ -660,20 +683,23 @@ namespace DataPlots.Wpf.Plots
                 InvalidatePlot();
             }
             // Hovering
-            else
+            else 
             {
-                var posD = new PointD(pos.X, pos.Y);
                 ISeries? bestSeries = null;
                 int bestIndex = -1;
-                double bestDist = double.MaxValue;
-                foreach (var series in Model.Series.Where(s => s.IsVisible))
+                if (_lastRenderRect.Contains(pos.X, pos.Y))
                 {
-                    var hit = series.GetNearestPoint(posD, _transform, 12.0d);
-                    if (hit.HasValue && hit.Value.DistancePixels < bestDist)
+                    double bestDist = double.MaxValue;
+                    PointD posD = pos.ToPointD();
+                    foreach (ISeries series in Model.Series.Where(s => s.IsVisible))
                     {
-                        bestDist = hit.Value.DistancePixels;
-                        bestSeries = series;
-                        bestIndex = hit.Value.PointIndex;
+                        var hit = series.GetNearestPoint(posD, _transform, 12.0d);
+                        if (hit.HasValue && hit.Value.DistancePixels < bestDist)
+                        {
+                            bestDist = hit.Value.DistancePixels;
+                            bestSeries = series;
+                            bestIndex = hit.Value.PointIndex;
+                        }
                     }
                 }
 

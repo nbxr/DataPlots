@@ -39,6 +39,11 @@ namespace DataPlots.Core
             Height = height;
         }
 
+        public bool Contains(double x, double y)
+        {
+            return (x >= Left) && (x <= Right) && (y >= Top) && (y <= Bottom);
+        }
+
         public static RectD Normalized(PointD p1, PointD p2)
         {
             double x = Math.Min(p1.X, p2.X);
