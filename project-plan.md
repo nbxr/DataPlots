@@ -39,7 +39,7 @@ Now we **evolve**.
   public ZoomMode ZoomMode { get; set; } = ZoomMode.XY;
 
 ### 2. IPlotModel Abstraction  
-- Move all demo logic out of MainWindow.xaml.cs into a proper model class
+- [x] Move all demo logic out of MainWindow.xaml.cs into a proper model class
 First implementation: RandomDataPlot : IPlotModel
 
 ### 3. Polar Plot Support
