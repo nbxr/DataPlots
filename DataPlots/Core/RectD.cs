@@ -39,9 +39,14 @@ namespace DataPlots.Core
             Height = height;
         }
 
-        public bool Contains(double x, double y)
+        public readonly bool Contains(double x, double y)
         {
             return (x >= Left) && (x <= Right) && (y >= Top) && (y <= Bottom);
+        }
+
+        public readonly bool IsEmpty()
+        {
+            return Width <= 0.0d || Height <= 0.0d;
         }
 
         public static RectD Normalized(PointD p1, PointD p2)

@@ -30,8 +30,8 @@ namespace DataPlots.Wpf.Plots
         private bool _isBoxZooming;
         private bool _isPanning;
         // Label caching
-        private List<TextBlock> inactiveLabels = new List<TextBlock>();
-        private List<TextBlock> activeLabels = new List<TextBlock>();
+        private readonly List<TextBlock> inactiveLabels = new List<TextBlock>();
+        private readonly List<TextBlock> activeLabels = new List<TextBlock>();
         #endregion Fields
         #region Dependency Properties
         public static readonly DependencyProperty ModelProperty =
@@ -173,6 +173,26 @@ namespace DataPlots.Wpf.Plots
                 typeof(double),
                 typeof(PlotView),
                 new PropertyMetadata(12.0d));
+
+        public static readonly DependencyProperty DataAreaMarginProperty =
+            DependencyProperty.Register(
+                nameof(DataAreaMargin),
+                typeof(double),
+                typeof(PlotView),
+                new PropertyMetadata(0.05, OnDataAreaMarginChanged)); // 5% default
+
+        private static void OnDataAreaMarginChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        {
+            if (d is PlotView view)
+                view.InvalidatePlot();
+        }
+
+        public double DataAreaMargin
+        {
+            get => (double)GetValue(DataAreaMarginProperty);
+            set => SetValue(DataAreaMarginProperty, value);
+        }
+
         #endregion Dependency Properties
         #region Properties
         public ZoomMode ZoomMode
@@ -268,7 +288,30 @@ namespace DataPlots.Wpf.Plots
             if (ActualWidth < 10 || ActualHeight < 10) return;
 
             if (_currentView == RectD.Empty)
-                _currentView = Model.CalculateDataRect();
+            {
+                var tightRect = Model.CalculateDataRect();
+                if (tightRect.IsEmpty())
+                    _currentView = new RectD(0, 0, 100, 100); // fallback
+                else
+                {
+                    double m = DataAreaMargin;
+                    if (m > 0)
+                    {
+                        double dx = tightRect.Width * m;
+                        double dy = tightRect.Height * m;
+
+                        _currentView = new RectD(
+                            tightRect.X - dx,
+                            tightRect.Y - dy,
+                            tightRect.Width + 2 * dx,
+                            tightRect.Height + 2 * dy);
+                    }
+                    else
+                    {
+                        _currentView = tightRect;
+                    }
+                }
+            }
 
             var padding = PlotPadding;
 
@@ -323,7 +366,7 @@ namespace DataPlots.Wpf.Plots
             _plotImage.Width = innerWidth;
             _plotImage.Height = innerHeight;
 
-            var renderRect = new RectD(0.0d, 0.0d, innerWidth, innerHeight);
+            RectD renderRect = new RectD(0.0d, 0.0d, innerWidth, innerHeight);
 
             _innerRenderRect = new RectD(
                 _effectivePadding.Left,
@@ -339,13 +382,13 @@ namespace DataPlots.Wpf.Plots
             _bitmap.Clear(PlotBackgroundColor.Color);
 
             DrawGridLines(renderRect, dataRect);
-            DrawPlotContent(renderRect, dataRect);
+            DrawPlotContent();
             DrawAxesAndLabels(renderRect, dataRect);
         }
 
         private void MeasureExtraPadding(ref double extraLeft, ref double extraRight, ref double maxLabelExtent, RectD dataRect)
         {
-            double[] ticks = Array.Empty<double>();
+            double[] ticks;
             string[] labels = Array.Empty<string>();
             foreach (Axis axis in Model.Axes)
             {
@@ -422,28 +465,28 @@ namespace DataPlots.Wpf.Plots
             }
         }
 
-        private void DrawPlotContent(RectD renderRect, RectD dataRect)
+        private void DrawPlotContent()
         {
             // Series
-            foreach (var series in Model!.Series.Where(s => s.IsVisible))
+            foreach (ISeries series in Model.Series.Where(s => s.IsVisible))
             {
                 if (series is LineSeries line)
                 {
-                    var color = line.Stroke.ToMediaColor();
+                    Color color = line.Stroke.ToMediaColor();
                     for (int i = 1; i < line.Points.Count; i++)
                     {
-                        var p0 = _transform!.DataToScreen(new PointD(line.Points[i - 1].X, line.Points[i - 1].Y));
-                        var p1 = _transform!.DataToScreen(new PointD(line.Points[i].X, line.Points[i].Y));
+                        PointD p0 = _transform!.DataToScreen(new PointD(line.Points[i - 1].X, line.Points[i - 1].Y));
+                        PointD p1 = _transform!.DataToScreen(new PointD(line.Points[i].X, line.Points[i].Y));
                         _bitmap.DrawLine(p0.X, p0.Y, p1.X, p1.Y, color, line.Thickness);
                     }
                 }
                 else if (series is ScatterSeries scatter)
                 {
-                    var color = scatter.Fill.ToMediaColor();
-                    var selected = Colors.DodgerBlue;
+                    Color color = scatter.Fill.ToMediaColor();
+                    Color selected = Colors.DodgerBlue;
                     foreach (var pt in scatter.Points)
                     {
-                        var sp = _transform!.DataToScreen(new PointD(pt.X, pt.Y));
+                        PointD sp = _transform!.DataToScreen(new PointD(pt.X, pt.Y));
                         _bitmap.FillCircle(sp.X, sp.Y, scatter.PointSize, pt.Selected ? selected : color, BorderColor, 0.5d);
                     }
                 }
@@ -455,12 +498,12 @@ namespace DataPlots.Wpf.Plots
             // Titles
             foreach (Axis axis in Model.Axes)
             {
-                DrawAxisTicks(renderRect, dataRect, axis);
+                DrawAxisTicks(dataRect, axis);
                 DrawAxisTitle(renderRect, axis);
             }
         }
 
-        private void DrawAxisTicks(RectD renderRect, RectD dataRect, Axis axis)
+        private void DrawAxisTicks(RectD dataRect, Axis axis)
         {
             switch (axis.Position)
             {
@@ -468,48 +511,43 @@ namespace DataPlots.Wpf.Plots
                     // X axis
                     var (xbTicks, xbLabels) = TickGenerator.Generate(dataRect.X, dataRect.Right);
                     for (int i = 0; i < xbTicks.Length; i++)
-                        DrawXTick(renderRect, dataRect, xbTicks[i], axis.TickLength, xbLabels[i], false);
+                        DrawXTick(dataRect, xbTicks[i], xbLabels[i], false);
                     break;
                 case AxisPosition.Left:
                     // Y axis
                     var (ylTicks, ylLabels) = TickGenerator.Generate(dataRect.Y, dataRect.Bottom);
                     for (int i = 0; i < ylTicks.Length; i++)
-                        DrawYTick(renderRect, dataRect, ylTicks[i], axis.TickLength, ylLabels[i], true);
+                        DrawYTick(dataRect, ylTicks[i], ylLabels[i], true);
                     break;
                 case AxisPosition.Top:
                     // X axis
                     var (xtTicks, xtLabels) = TickGenerator.Generate(dataRect.X, dataRect.Right);
                     for (int i = 0; i < xtTicks.Length; i++)
-                        DrawXTick(renderRect, dataRect, xtTicks[i], axis.TickLength, xtLabels[i], true);
+                        DrawXTick(dataRect, xtTicks[i], xtLabels[i], true);
                     break;
                 case AxisPosition.Right:
                     // Y axis
                     var (yrTicks, yrLabels) = TickGenerator.Generate(dataRect.Y, dataRect.Bottom);
                     for (int i = 0; i < yrTicks.Length; i++)
-                        DrawYTick(renderRect, dataRect, yrTicks[i], axis.TickLength, yrLabels[i], false);
+                        DrawYTick(dataRect, yrTicks[i], yrLabels[i], false);
                     break;
             }
         }
 
-        private void DrawXTick(RectD renderRect, RectD dataRect, double tick, double length, string label, bool isTop)
+        private void DrawXTick(RectD dataRect, double tick, string label, bool isTop)
         {
             PointD sp = _transform.DataToScreen(new PointD(tick, dataRect.Y));
 
             double screenX = sp.X;
             double controlX = PlotPadding.Left + screenX;
-
             double edgeY = isTop ? PlotPadding.Top : (ActualHeight - PlotPadding.Bottom);
             double tickDir = isTop ? -1.0d : +1.0d;
-
-            //double y0 = edgeY;
-            //double y1 = edgeY + tickDir * length;
-            //_bitmap.DrawLine(sp.X, y0, sp.X, y1, BorderColor);
-
+            double length = DataAreaMargin;
             double labelY = edgeY + tickDir * (length + 8);
             AddLabel(label, controlX, labelY, FontColor, TickLabelFontSize, centerX: true, centerY: true);
         }
 
-        private void DrawYTick(RectD renderRect, RectD dataRect, double tick, double length, string label, bool isLeft)
+        private void DrawYTick(RectD dataRect, double tick, string label, bool isLeft)
         {
             PointD sp = _transform.DataToScreen(new PointD(dataRect.X, tick));
 
@@ -518,15 +556,11 @@ namespace DataPlots.Wpf.Plots
 
             double edgeX = isLeft ? PlotPadding.Left : (ActualWidth - PlotPadding.Right);
             double tickDir = isLeft ? -1.0d : +1.0d;
-
-            //double x0 = edgeX;
-            //double x1 = edgeX + tickDir * length;
-            //_bitmap.DrawLine(x0, sp.Y, x1, sp.Y, BorderColor);
-
+            double length = DataAreaMargin;
             // Measure label width
             var labelWidth = !isLeft ? 0.0d : label.MeasureText(TickLabelFontSize).Width;
             // Dynamic offset: always fully visible, never clipped
-            double labelX = edgeX + tickDir * (labelWidth + 12.0d); // 12px padding from axis
+            double labelX = edgeX + tickDir * (labelWidth + length + 8); // 12px padding from axis
             AddLabel(label, labelX, controlY, FontColor, TickLabelFontSize, centerX: false, centerY: true);
         }
 
