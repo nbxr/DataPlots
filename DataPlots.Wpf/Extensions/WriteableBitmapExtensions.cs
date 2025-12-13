@@ -1,22 +1,8 @@
-﻿// FastBitmap.cs
-using System;
-using System.Runtime.CompilerServices;
-using System.Windows;
-using System.Windows.Media;
-using System.Windows.Media.Imaging;
-
-namespace DataPlots.Wpf.Extensions;
+﻿namespace DataPlots.Wpf.Extensions;
 
 internal static class WriteableBitmapExtensions
 {
-    [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    private static int ColorToInt(Color c)
-    {
-        // Shift the bytes into their proper positions:
-        //   A = bits 31-24, R = bits 23-16, G = bits 15-8, B = bits 7-0
-        return c.A << 24 | c.R << 16 | c.G << 8 | c.B;
-    }
-
+    #region Methods - Non-drawing
     public static void Clear(this WriteableBitmap bmp, Color color)
     {
         int intColor = ColorToInt(color);
@@ -30,6 +16,132 @@ internal static class WriteableBitmapExtensions
         bmp.AddDirtyRect(new Int32Rect(0, 0, bmp.PixelWidth, bmp.PixelHeight));
         bmp.Unlock();
     }
+    #endregion Methods - Non-drawing
+    #region Methods - Drawing
+    /// <summary>
+    /// Draws a hollow circle (ring) with anti-aliasing.
+    /// For thicker lines (> 1.5d), it uses the high-quality WPF DrawingVisual fallback.
+    /// </summary>
+    public static void DrawCircle(this WriteableBitmap bmp, double cx, double cy, double r, Color color, double thickness = 1.0d)
+    {
+        if (r <= 0 || thickness <= 0 || color.A == 0)
+            return;
+
+        // --- Custom Anti-Aliased Ring Drawing (for thin lines: thickness <= 1.5) ---
+
+        // AA FACTOR: Controls the sharpness of the edge. 4.0 provides a smoother visual result than 8.0.
+        const double AA_FACTOR = 2.0;
+
+        double rInner = r - thickness / 2.0d;
+        double rOuter = r + thickness / 2.0d;
+        if (rInner < 0) rInner = 0;
+
+        // Bounding box calculation... (remains unchanged)
+        int x0 = Math.Max(0, (int)Math.Floor(cx - rOuter - 1.5));
+        int x1 = Math.Min(bmp.PixelWidth - 1, (int)Math.Ceiling(cx + rOuter + 1.5));
+        int y0 = Math.Max(0, (int)Math.Floor(cy - rOuter - 1.5));
+        int y1 = Math.Min(bmp.PixelHeight - 1, (int)Math.Ceiling(cy + rOuter + 1.5));
+
+        if (x0 >= x1 || y0 >= y1)
+            return;
+
+        byte aSrc = color.A;
+        byte rSrc = color.R;
+        byte gSrc = color.G;
+        byte bSrc = color.B;
+
+        bmp.Lock();
+        unsafe
+        {
+            byte* ptr = (byte*)bmp.BackBuffer;
+            int stride = bmp.BackBufferStride;
+
+            for (int y = y0; y <= y1; y++)
+            {
+                byte* row = ptr + y * stride;
+                double dy = y + 0.5 - cy;
+
+                for (int x = x0; x <= x1; x++)
+                {
+                    double dx = x + 0.5 - cx;
+                    double dist = Math.Sqrt(dx * dx + dy * dy);
+
+                    if (dist > rOuter + 0.5) continue;
+
+                    double coverage = 1.0;
+
+                    // --- Outer Edge AA (Fade Out) ---
+                    if (dist > rOuter)
+                    {
+                        double t = dist - rOuter;
+                        // Use AA_FACTOR for smoother falloff
+                        coverage = 1.0 - Math.Min(t * AA_FACTOR, 1.0);
+                    }
+
+                    // --- Inner Edge AA (Fade Out) ---
+                    if (dist < rInner)
+                    {
+                        if (rInner > 0)
+                        {
+                            double t = rInner - dist;
+                            // Use AA_FACTOR for smoother falloff
+                            coverage *= Math.Max(0.0, 1.0 - Math.Min(t * AA_FACTOR, 1.0));
+                        }
+                        else
+                        {
+                            coverage = 1.0;
+                        }
+                    }
+
+                    if (coverage <= 0.0) continue;
+
+                    // --- Improved Blending using Coverage ---
+
+                    int offset = x * 4;
+                    byte* p = row + offset;
+
+                    // Source alpha scaled by pixel coverage (0 to 1)
+                    double sourceAlphaCoverage = aSrc * coverage;
+
+                    // If full coverage and opaque source, simple overwrite
+                    if (sourceAlphaCoverage >= 255.0)
+                    {
+                        p[0] = bSrc;
+                        p[1] = gSrc;
+                        p[2] = rSrc;
+                        p[3] = 255;
+                    }
+                    else
+                    {
+                        // Convert to 0..255 space for destination channels
+                        double alpha = sourceAlphaCoverage / 255.0;
+                        double oneMinusAlpha = 1.0 - alpha;
+
+                        byte bDst = p[0];
+                        byte gDst = p[1];
+                        byte rDst = p[2];
+                        byte aDst = p[3];
+
+                        // Blend RGB channels (standard alpha blending)
+                        byte rNew = (byte)(rSrc * alpha + rDst * oneMinusAlpha);
+                        byte gNew = (byte)(gSrc * alpha + gDst * oneMinusAlpha);
+                        byte bNew = (byte)(bSrc * alpha + bDst * oneMinusAlpha);
+
+                        // Blend Alpha channel
+                        byte aNew = (byte)(sourceAlphaCoverage + aDst * oneMinusAlpha);
+
+                        p[0] = bNew;
+                        p[1] = gNew;
+                        p[2] = rNew;
+                        p[3] = aNew;
+                    }
+                }
+            }
+        }
+
+        bmp.AddDirtyRect(new Int32Rect(x0, y0, x1 - x0 + 1, y1 - y0 + 1));
+        bmp.Unlock();
+    }
 
     public static void DrawLine(this WriteableBitmap bmp, double x0, double y0, double x1, double y1, Color color, double thickness = 1.0)
     {
@@ -39,20 +151,20 @@ internal static class WriteableBitmapExtensions
         if (thickness > 1.5)
         {
             bmp.Lock();
-            var pen = new Pen(new SolidColorBrush(color), thickness)
+            Pen pen = new Pen(new SolidColorBrush(color), thickness)
             {
                 LineJoin = PenLineJoin.Round,
                 EndLineCap = PenLineCap.Round,
                 StartLineCap = PenLineCap.Round
             };
 
-            var dv = new DrawingVisual();
-            using (var dc = dv.RenderOpen())
+            DrawingVisual dv = new DrawingVisual();
+            using (DrawingContext dc = dv.RenderOpen())
             {
                 dc.DrawLine(pen, new Point(x0, y0), new Point(x1, y1));
             }
 
-            var rtb = new RenderTargetBitmap(bmp.PixelWidth, bmp.PixelHeight, 96, 96, PixelFormats.Pbgra32);
+            RenderTargetBitmap rtb = new RenderTargetBitmap(bmp.PixelWidth, bmp.PixelHeight, 96, 96, PixelFormats.Pbgra32);
             rtb.Render(dv);
 
             // Only copy the dirty area around the line
@@ -62,7 +174,7 @@ internal static class WriteableBitmapExtensions
             int width = (int)Math.Abs(x1 - x0) + 2 * margin;
             int height = (int)Math.Abs(y1 - y0) + 2 * margin;
 
-            var rect = new Int32Rect(
+            Int32Rect rect = new Int32Rect(
                 Math.Max(0, left),
                 Math.Max(0, top),
                 Math.Min(width, bmp.PixelWidth - Math.Max(0, left)),
@@ -110,8 +222,35 @@ internal static class WriteableBitmapExtensions
                 if (e2 < dx) { err += dx; iy0 += sy; }
             }
         }
-        bmp.AddDirtyRect(new Int32Rect(0, 0, w, h));
+
+        Int32Rect dirtyRect = bmp.GetClampedPixelBounds(x0, y0, x1, y1);
+        if (dirtyRect.Width > 0 && dirtyRect.Height > 0)
+            bmp.AddDirtyRect(dirtyRect);
+
         bmp.Unlock();
+    }
+
+    public static void DrawRectangle(this WriteableBitmap bmp, double x, double y, double x2, double y2, Color color, double thickness = 1.0)
+    {
+        // Check for trivial case
+        if (x == x2 || y == y2 || color.A == 0 || thickness <= 0)
+            return;
+
+        // Normalize coordinates
+        double left = Math.Min(x, x2);
+        double right = Math.Max(x, x2);
+        double top = Math.Min(y, y2);
+        double bottom = Math.Max(y, y2);
+
+        // Draw the four sides using the existing DrawLine method.
+        // 1. Top line (Left to Right)
+        bmp.DrawLine(left, top, right, top, color, thickness);
+        // 2. Right line (Top to Bottom)
+        bmp.DrawLine(right, top, right, bottom, color, thickness);
+        // 3. Bottom line (Right to Left)
+        bmp.DrawLine(right, bottom, left, bottom, color, thickness);
+        // 4. Left line (Bottom to Top)
+        bmp.DrawLine(left, bottom, left, top, color, thickness);
     }
 
     public static void FillCircle(this WriteableBitmap bmp, double cx, double cy, double r, Color fillColor, Color? borderColor = null, double borderThickness = 0.0d)
@@ -138,11 +277,12 @@ internal static class WriteableBitmapExtensions
             FillEllipse(bmp, cx, cy, rx, ry, fillColor);
         }
     }
-
+    #endregion Methods - Drawing
+    #region Methods - Private Drawing
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private static void FillEllipse(this WriteableBitmap bmp, double cx, double cy, double rx, double ry, Color color)
     {
-        if (rx <= 0 || ry <= 0 || color.A == 0) 
+        if (rx <= 0 || ry <= 0 || color.A == 0)
             return;
 
         // Bounding box with 2px margin for perfect AA
@@ -151,7 +291,7 @@ internal static class WriteableBitmapExtensions
         int y0 = Math.Max(0, (int)Math.Floor(cy - ry - 1.5));
         int y1 = Math.Min(bmp.PixelHeight - 1, (int)Math.Ceiling(cy + ry + 1.5));
 
-        if (x0 >= x1 || y0 >= y1) 
+        if (x0 >= x1 || y0 >= y1)
             return;
 
         byte aSrc = color.A;
@@ -283,4 +423,64 @@ internal static class WriteableBitmapExtensions
         bmp.AddDirtyRect(new Int32Rect(x0, y0, width, height));
         bmp.Unlock();
     }
+    #endregion Methods - Private Drawing
+    #region Methods - Private Helper Methods
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private static int ColorToInt(Color c)
+    {
+        // Shift the bytes into their proper positions:
+        //   A = bits 31-24, R = bits 23-16, G = bits 15-8, B = bits 7-0
+        return c.A << 24 | c.R << 16 | c.G << 8 | c.B;
+    }
+
+    private static Int32Rect GetClampedPixelBounds(this WriteableBitmap bmp, double x0, double y0, double x1, double y1)
+    {
+        int minX = (int)Math.Min(x0, x1);
+        int minY = (int)Math.Min(y0, y1);
+        int maxX = (int)Math.Max(x0, x1);
+        int maxY = (int)Math.Max(y0, y1);
+
+        // 2. The width/height calculation is correct for distance, but must be 
+        //    +1 to include the last pixel boundary (inclusive range)
+        int width = (maxX - minX) + 1;
+        int height = (maxY - minY) + 1;
+
+        // 3. Create the Int32Rect using (X, Y, Width, Height)
+        Int32Rect minimal = new Int32Rect(minX, minY, width, height);
+
+        // 4. Boundary check the rect against the bitmap size (CRITICAL)
+        //    This prevents the ArgumentOutOfRangeException if a line is drawn 
+        //    even slightly outside the bitmap boundaries.
+
+        // Check X and Width
+        if (minX < 0)
+        {
+            // Start X is off-screen, shift X to 0 and reduce Width accordingly
+            width += minX; // Since minX is negative, this reduces width
+            minX = 0;
+        }
+        if (minX + width > bmp.PixelWidth)
+        {
+            // End X is off-screen, clamp Width
+            width = bmp.PixelWidth - minX;
+        }
+
+        // Check Y and Height
+        if (minY < 0)
+        {
+            // Start Y is off-screen
+            height += minY;
+            minY = 0;
+        }
+        if (minY + height > bmp.PixelHeight)
+        {
+            // End Y is off-screen, clamp Height
+            height = bmp.PixelHeight - minY;
+        }
+
+        // 5. Recreate the minimal rect after clamping/boundary checks
+        minimal = new Int32Rect(minX, minY, width, height);
+        return minimal;
+    }
+    #endregion Methods - Private Helper Methods
 }

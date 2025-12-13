@@ -5,11 +5,14 @@
         public ISeries? Series { get; }
         public int PointIndex { get; }
         public DataPoint? Point { get; }
-        public DataPointHoverEventArgs(ISeries? series, int pointIndex, DataPoint? point)
+        public DataPointHoverEventArgs(ISeries? series, int pointIndex)
         {
             Series = series;
             PointIndex = pointIndex;
-            Point = point;
+            if (series != null && pointIndex > -1 && pointIndex < series.Points.Count)
+                Point = series.Points[pointIndex];
+            else
+                Point = null;
         }
     }
 }

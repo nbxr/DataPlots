@@ -13,7 +13,11 @@
     <Grid>
         <dpwpf:PlotView x:Name="plotView"
                         ZoomMode="{Binding SelectedItem, ElementName=ZoomComboBox}"
-                        Background="#FFF8F8F8"/>
+                        Background="Black"
+                        BorderColor="Black"
+                        FontColor="White"
+                        PlotBackgroundColor="DodgerBlue"/>
+        
         <!-- ComboBox for ZoomMode selection -->
         <Border Background="White"
                 BorderBrush="#FFD0D0D0"
@@ -30,7 +34,6 @@
                            FontWeight="SemiBold"
                            Foreground="#FF333333"
                            Margin="0,0,10,0"/>
-                <!-- Uncomment the block below if you don't want to add a converter -->
                 <ComboBox x:Name="ZoomComboBox"
                           SelectedIndex="0">
                     <dp:ZoomMode>XY</dp:ZoomMode>

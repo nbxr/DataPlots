@@ -2,10 +2,12 @@
 {
     public static class TickGenerator
     {
+        private static (double[] ticks, string[] labels) emptyResult = new(Array.Empty<double>(), Array.Empty<string>());
+        
         public static (double[] ticks, string[] labels) Generate(double min, double max, int maxCount = 8)
         {
             if (max <= min)
-                return (Array.Empty<double>(), Array.Empty<string>());
+                return emptyResult;
 
             double range = max - min;
             double roughtStep = range / maxCount;
