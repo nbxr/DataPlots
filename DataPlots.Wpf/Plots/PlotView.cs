@@ -3,6 +3,7 @@ using DataPlots.Wpf.Extensions;
 using System.ComponentModel;
 using System.Data;
 using System.Windows.Shapes;
+using HitTestResult = DataPlots.Core.HitTestResult;
 
 namespace DataPlots.Wpf.Plots
 {
@@ -653,8 +654,8 @@ namespace DataPlots.Wpf.Plots
 
                 if (axis.Position == AxisPosition.Left || axis.Position == AxisPosition.Right)
                 {
-                    // 1. Generate ticks/labels (REQUIRED whenever the axis is visible)
-                    (ticks, labels) = GetTicks(axis.Position); // TickGenerator.Generate(dataRect.Y, dataRect.Bottom);
+                    // 1. Generate ticks/labels
+                    (ticks, labels) = GetTicks(axis.Position);
 
                     double requiredExtent = 0.0d;
                     double maxLabelWidth = 0.0d;
@@ -704,10 +705,10 @@ namespace DataPlots.Wpf.Plots
 
         private void DrawGridLines(RectD renderRect, RectD dataRect)
         {
-            var gridColor = GridColor; // Light gray
+            Color gridColor = GridColor; // Light gray
 
             // Vertical grid lines (X ticks)
-            var (xTicks, _) = GetTicks(AxisPosition.Bottom);
+            (double[] xTicks, string[] _) = GetTicks(AxisPosition.Bottom);
             foreach (double tick in xTicks)
             {
                 double x = _dataToScreenTransform.DataToScreen(new PointD(tick, 0)).X;
@@ -715,7 +716,7 @@ namespace DataPlots.Wpf.Plots
             }
 
             // Horizontal grid lines (Y ticks)
-            var (yTicks, _) = GetTicks(AxisPosition.Left);
+            (double[] yTicks, string[] _) = GetTicks(AxisPosition.Left);
             foreach (double tick in yTicks)
             {
                 double y = _dataToScreenTransform.DataToScreen(new PointD(0, tick)).Y;
@@ -742,7 +743,7 @@ namespace DataPlots.Wpf.Plots
                 {
                     Color color = scatter.Fill.ToMediaColor();
                     Color selected = Colors.DodgerBlue;
-                    foreach (var pt in scatter.Points)
+                    foreach (DataPoint pt in scatter.Points)
                     {
                         PointD sp = _dataToScreenTransform!.DataToScreen(new PointD(pt.X, pt.Y));
                         _bitmap.FillCircle(sp.X, sp.Y, scatter.PointSize, pt.Selected ? selected : color, BorderColor, 0.5d);
@@ -763,7 +764,7 @@ namespace DataPlots.Wpf.Plots
 
         private void DrawAxisTicks(RectD dataRect, Axis axis)
         {
-            var (ticks, labels) = GetTicks(axis.Position);
+            (double[] ticks, string[] labels) = GetTicks(axis.Position);
             switch (axis.Position)
             {
                 case AxisPosition.Bottom:
@@ -1118,7 +1119,8 @@ namespace DataPlots.Wpf.Plots
 
                     foreach (ISeries series in Model.Series.Where(s => s.IsVisible))
                     {
-                        var hit = series.GetNearestPoint(localPos, _dataToScreenTransform, 12.0d);
+                        double dist = (series is ScatterSeries scat) ? scat.PointSize : 12.0d;
+                        HitTestResult? hit = series.GetNearestPoint(localPos, _dataToScreenTransform, dist);
                         if (hit.HasValue && hit.Value.DistancePixels < bestDist)
                         {
                             bestDist = hit.Value.DistancePixels;
