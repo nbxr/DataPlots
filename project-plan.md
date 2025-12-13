@@ -42,9 +42,12 @@ Now we **evolve**.
 - [x] Move all demo logic out of MainWindow.xaml.cs into a proper model class
 First implementation: RandomDataPlot : IPlotModel
 
-### 3. Polar Plot Support
+### 3. Swimlane Chart Support
+- Implement Swimlane Chart where entites can be stacked either horizontally or vertically
+- Entities can have multiple series that are drawn in their lane
+
+### 4. Polar Plot Support
 New PolarPlotModel, PolarTransform, radial + angular axes
-- Stacked / Multi-Plot Layout
 - PlotGrid, shared axes, linked zoom, overlay support
 
 ## PHASE 3 — ABSTRACTION & EXTENSIBILITY
